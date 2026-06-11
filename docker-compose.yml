@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: landing
+      POSTGRES_PASSWORD: landing
+      POSTGRES_DB: landing
+    # Host 5433 evita choque si ya tienes Postgres en 5432 (Postgres.app, otro Docker, etc.)
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
