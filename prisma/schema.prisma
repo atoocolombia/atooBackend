@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Ejemplo de tabla consumible por la API (`/api/v1/vehicles`).
+/// Puedes renombrar o ampliar modelos y luego ejecutar `npm run db:migrate`.
+model Vehicle {
+  id        String   @id
+  name      String
+  brand     String?
+  price     Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum UserType {
+  USER
+  ADVISOR
+  ADMIN
+  ANALYST
+}
+
+enum DocumentValidationStatus {
+  PENDING
+  VALIDATED
+  REJECTED
+}
+
+/// Usuarios registrados. La contraseña nunca se guarda en claro: solo `passwordHash` (bcrypt).
+model User {
+  id                 String                  @id
+  email              String                  @unique
+  passwordHash       String
+  userType           UserType
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  documents              Document[]
+  identityExtraction     UserIdentityExtraction?
+  workAddressExtraction UserWorkAddressExtraction?
+}
+
+/// Archivos o imágenes subidos por usuario (metadatos en BD; bytes en disco bajo uploads/).
+model Document {
+  id                 String                   @id
+  userId             String
+  user               User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentKind       String
+  validationStatus   DocumentValidationStatus @default(PENDING)
+  /// Motivo de rechazo (p. ej. verificación automática con IA).
+  validationMessage  String?
+  originalName       String
+  mimeType           String
+  sizeBytes          Int
+  storedPath         String
+  createdAt          DateTime                 @default(now())
+
+  @@unique([userId, documentKind])
+  @@index([userId])
+}
+
+/// Datos extraídos por IA del documento de identidad (cédula, cédula de extranjería, pasaporte, etc.) y del pase (licencia), un registro por usuario.
+model UserIdentityExtraction {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Nombres de pila según el documento de identidad.
+  firstName String?
+  /// Apellidos según el documento de identidad.
+  lastName  String?
+  /// Fecha de nacimiento (YYYY-MM-DD) si se pudo leer con claridad.
+  birthDate        String?
+  /// Número o código del documento de identidad (p. ej. cédula, CE, pasaporte).
+  idDocumentNumber String?
+
+  /// Si el pase corresponde al mismo titular que el documento de identidad (null = aún no evaluado o datos insuficientes).
+  licenseMatchesCedula Boolean?
+  /// Fecha hasta la cual el pase tiene vigencia autorizada (YYYY-MM-DD cuando se pudo inferir).
+  licenseValidUntil    String?
+
+  /// Documento `Document.id` del frente de identidad validado (referencia a la foto en disco bajo `uploads/`).
+  identityPhotoDocumentId String?
+  /// La selfie corresponde facialmente al titular del documento de identidad.
+  selfieMatchesIdentityPerson Boolean?
+  /// La selfie no es la misma imagen/recorte que la foto del documento (toma distinta, p. ej. selfie real).
+  selfieIsDistinctCaptureFromIdentity Boolean?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Paso 3: apps de conductor, banco y recibo de vivienda — datos validados o extraídos con IA.
+model UserWorkAddressExtraction {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  utilityServiceAddress String?
+
+  bankHolderMatchesIdentity Boolean?
+
+  /// Ej.: {"platformWork1":{"appKey":"uber","rating":4.9}}
+  platformCapturesMeta Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
