@@ -16,6 +16,25 @@ const clientOrigins = (process.env.CLIENT_ORIGIN ?? "http://localhost:5173")
 const allowLocalhostDev =
   process.env.NODE_ENV !== "production" && process.env.CORS_ALLOW_LOCALHOST !== "false";
 
+function isAllowedOrigin(origin: string): boolean {
+  if (clientOrigins.includes(origin)) {
+    return true;
+  }
+  if (/^https:\/\/(www\.)?atoo\.io$/i.test(origin)) {
+    return true;
+  }
+  if (/^https:\/\/[a-z0-9-]+(-[a-z0-9-]+)*\.vercel\.app$/i.test(origin)) {
+    return true;
+  }
+  if (
+    allowLocalhostDev &&
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -23,17 +42,11 @@ app.use(
         callback(null, true);
         return;
       }
-      if (clientOrigins.includes(origin)) {
+      if (isAllowedOrigin(origin)) {
         callback(null, true);
         return;
       }
-      if (
-        allowLocalhostDev &&
-        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)
-      ) {
-        callback(null, true);
-        return;
-      }
+      console.warn(`[cors] Origen rechazado: ${origin}`);
       callback(null, false);
     },
   }),
