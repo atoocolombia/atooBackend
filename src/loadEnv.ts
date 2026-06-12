@@ -12,12 +12,12 @@ const result = dotenv.config({
   override: true,
 });
 
-if (result.error) {
+if (result.error && process.env.NODE_ENV !== "production") {
   console.warn(`[env] No se pudo leer ${envPath}:`, result.error.message);
 }
 
 if (!process.env.GEMINI_API_KEY?.trim() && process.env.DATA_TREATMENT_SKIP_AI_VERIFY !== "true") {
   console.warn(
-    `[env] Falta GEMINI_API_KEY en ${envPath} (archivo guardado en disco). La verificación automática del PDF de autorización no funcionará hasta que añadas la clave y reinicies el servidor.`,
+    "[env] Falta GEMINI_API_KEY. La verificación automática del PDF de autorización no funcionará hasta que añadas la clave (Variables en Railway o .env en local) y reinicies el servidor.",
   );
 }
