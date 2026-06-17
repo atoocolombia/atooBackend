@@ -31,16 +31,17 @@ enum DocumentValidationStatus {
   REJECTED
 }
 
-/// Usuarios registrados. La contraseña nunca se guarda en claro: solo `passwordHash` (bcrypt).
+/// Usuarios registrados. Contraseña (bcrypt) o Google (`googleId`); al menos uno debe existir.
 model User {
-  id                 String                  @id
-  email              String                  @unique
-  passwordHash       String
-  userType           UserType
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
-  documents              Document[]
-  identityExtraction     UserIdentityExtraction?
+  id                    String                     @id
+  email                 String                     @unique
+  passwordHash          String?
+  googleId              String?                    @unique
+  userType              UserType
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  documents             Document[]
+  identityExtraction    UserIdentityExtraction?
   workAddressExtraction UserWorkAddressExtraction?
 }
 

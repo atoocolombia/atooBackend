@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import { Prisma, UserType } from "@prisma/client";
 import { Router } from "express";
+import { authenticateWithGoogle } from "../lib/authenticateWithGoogle.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { prisma } from "../lib/prisma.js";
 
@@ -31,6 +32,11 @@ authRouter.post("/login", async (req, res, next) => {
 
     if (!user) {
       res.status(401).json({ error: "Correo o contraseña incorrectos" });
+      return;
+    }
+
+    if (!user.passwordHash) {
+      res.status(401).json({ error: "Esta cuenta usa Google. Inicia sesión con Google." });
       return;
     }
 
@@ -120,6 +126,55 @@ authRouter.post("/register", async (req, res, next) => {
 
     res.status(201).json(user);
   } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post("/google", async (req, res, next) => {
+  try {
+    const { credential, userType } = req.body as {
+      credential?: string;
+      userType?: string;
+    };
+
+    if (!credential || typeof credential !== "string") {
+      res.status(400).json({ error: "Falta el token de Google (credential)" });
+      return;
+    }
+
+    let normalizedType: UserType = UserType.USER;
+    if (userType !== undefined) {
+      if (typeof userType !== "string") {
+        res.status(400).json({ error: "Tipo de usuario inválido" });
+        return;
+      }
+      normalizedType = userType.trim().toUpperCase() as UserType;
+      if (!Object.values(UserType).includes(normalizedType)) {
+        res.status(400).json({
+          error: "Tipo de usuario inválido",
+          allowed: Object.values(UserType),
+        });
+        return;
+      }
+    }
+
+    const user = await authenticateWithGoogle(credential, normalizedType);
+    res.status(200).json(user);
+  } catch (err) {
+    if (err instanceof Error) {
+      if (err.message.includes("GOOGLE_CLIENT_ID")) {
+        res.status(503).json({ error: "Inicio de sesión con Google no configurado en el servidor" });
+        return;
+      }
+      if (
+        err.message.includes("Token de Google") ||
+        err.message.includes("no está verificado") ||
+        err.message.includes("otra cuenta de Google")
+      ) {
+        res.status(401).json({ error: err.message });
+        return;
+      }
+    }
     next(err);
   }
 });
