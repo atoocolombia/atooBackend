@@ -1,3 +1,18 @@
+export interface HeroSectionContent {
+  badge: string;
+  titleBefore: string;
+  titleHighlight: string;
+  description: string;
+  primaryButtonText: string;
+  secondaryButtonText: string;
+  videoUrl: string;
+  posterUrl: string;
+  videoStoredPath: string | null;
+  posterStoredPath: string | null;
+  videoMimeType: string | null;
+  posterMimeType: string | null;
+}
+
 export interface BenefitItem {
   icon: string;
   title: string;
@@ -47,6 +62,7 @@ export interface ContactSectionContent {
 }
 
 export interface LandingContent {
+  hero: HeroSectionContent;
   benefits: BenefitsSectionContent;
   steps: StepsSectionContent;
   contact: ContactSectionContent;
@@ -54,6 +70,21 @@ export interface LandingContent {
 
 export function defaultLandingContent(): LandingContent {
   return {
+    hero: {
+      badge: "Tu propio vehículo en 60 meses",
+      titleBefore: "Drive Today, ",
+      titleHighlight: "Yours Tomorrow",
+      description:
+        "Modelo Rent to Own para conductores de Uber, DiDi y más. Pagos semanales y al finalizar el plazo, ¡el vehículo es tuyo!",
+      primaryButtonText: "Comenzar Ahora",
+      secondaryButtonText: "Ver Cómo Funciona",
+      videoUrl: "/hero/hero-bg.mp4",
+      posterUrl: "/hero/hero-poster.jpg",
+      videoStoredPath: null,
+      posterStoredPath: null,
+      videoMimeType: null,
+      posterMimeType: null,
+    },
     benefits: {
       badge: "Beneficios atoo",
       titleBefore: "¿Por Qué Elegir ",
@@ -190,13 +221,42 @@ function pickStrings(raw: unknown, fallback: Record<string, string>, keys: strin
   return result;
 }
 
+function pickNullableString(raw: unknown, key: string, fallback: string | null): string | null {
+  if (!isRecord(raw)) return fallback;
+  const value = raw[key];
+  if (value === null) return null;
+  if (typeof value === "string") return value;
+  return fallback;
+}
+
 export function mergeLandingContent(stored: unknown): LandingContent {
   const defaults = defaultLandingContent();
   if (!isRecord(stored)) return defaults;
 
+  const heroRaw = isRecord(stored.hero) ? stored.hero : {};
   const benefitsRaw = isRecord(stored.benefits) ? stored.benefits : {};
   const stepsRaw = isRecord(stored.steps) ? stored.steps : {};
   const contactRaw = isRecord(stored.contact) ? stored.contact : {};
+
+  const heroFields = pickStrings(heroRaw, {
+    badge: defaults.hero.badge,
+    titleBefore: defaults.hero.titleBefore,
+    titleHighlight: defaults.hero.titleHighlight,
+    description: defaults.hero.description,
+    primaryButtonText: defaults.hero.primaryButtonText,
+    secondaryButtonText: defaults.hero.secondaryButtonText,
+    videoUrl: defaults.hero.videoUrl,
+    posterUrl: defaults.hero.posterUrl,
+  }, [
+    "badge",
+    "titleBefore",
+    "titleHighlight",
+    "description",
+    "primaryButtonText",
+    "secondaryButtonText",
+    "videoUrl",
+    "posterUrl",
+  ]);
 
   const benefitsItemsRaw = Array.isArray(benefitsRaw.items) ? benefitsRaw.items : null;
   const stepsItemsRaw = Array.isArray(stepsRaw.items) ? stepsRaw.items : null;
@@ -245,6 +305,20 @@ export function mergeLandingContent(stored: unknown): LandingContent {
   ]);
 
   return {
+    hero: {
+      badge: heroFields.badge,
+      titleBefore: heroFields.titleBefore,
+      titleHighlight: heroFields.titleHighlight,
+      description: heroFields.description,
+      primaryButtonText: heroFields.primaryButtonText,
+      secondaryButtonText: heroFields.secondaryButtonText,
+      videoUrl: heroFields.videoUrl,
+      posterUrl: heroFields.posterUrl,
+      videoStoredPath: pickNullableString(heroRaw, "videoStoredPath", defaults.hero.videoStoredPath),
+      posterStoredPath: pickNullableString(heroRaw, "posterStoredPath", defaults.hero.posterStoredPath),
+      videoMimeType: pickNullableString(heroRaw, "videoMimeType", defaults.hero.videoMimeType),
+      posterMimeType: pickNullableString(heroRaw, "posterMimeType", defaults.hero.posterMimeType),
+    },
     benefits: {
       badge: benefitsFields.badge,
       titleBefore: benefitsFields.titleBefore,

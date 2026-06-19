@@ -4,11 +4,14 @@ import { Router } from "express";
 import fs from "node:fs/promises";
 import { mapCatalogVehicleToDto } from "../lib/catalogVehicleMapper.js";
 import { createCatalogVehicleImageUploader, relativeStoredPath } from "../lib/catalogVehicleUpload.js";
+import { mapLandingContentToDto } from "../lib/landingContentMapper.js";
 import {
   defaultLandingContent,
   mergeLandingContent,
   validateLandingContent,
+  type LandingContent,
 } from "../lib/landingContentDefaults.js";
+import { createHeroPosterUploader, createHeroVideoUploader } from "../lib/landingHeroUpload.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { prisma } from "../lib/prisma.js";
 import { resolveStoredFile } from "../lib/uploadStorage.js";
@@ -30,8 +33,25 @@ async function getOrCreateSettings() {
   return prisma.landingSettings.upsert({
     where: { id: "default" },
     update: {},
-    create: { id: "default", maxVisibleVehicles: 10 },
+    create: { id: "default", maxVisibleVehicles: 10, content: defaultLandingContent() as object },
   });
+}
+
+async function saveLandingContent(content: LandingContent) {
+  await prisma.landingSettings.upsert({
+    where: { id: "default" },
+    update: { content: content as object },
+    create: { id: "default", maxVisibleVehicles: 10, content: content as object },
+  });
+}
+
+async function deleteStoredPathIfExists(storedPath: string | null) {
+  if (!storedPath) return;
+  try {
+    await fs.unlink(resolveStoredFile(storedPath));
+  } catch {
+    /* ignore */
+  }
 }
 
 async function findVehicleOr404(id: string) {
@@ -50,10 +70,42 @@ landingRouter.get("/settings", async (_req, res, next) => {
   }
 });
 
-landingRouter.get("/content", async (_req, res, next) => {
+landingRouter.get("/content", async (req, res, next) => {
   try {
     const settings = await getOrCreateSettings();
-    res.json(mergeLandingContent(settings.content));
+    res.json(mapLandingContentToDto(mergeLandingContent(settings.content), req));
+  } catch (err) {
+    next(err);
+  }
+});
+
+landingRouter.get("/hero/video/file", async (_req, res, next) => {
+  try {
+    const settings = await getOrCreateSettings();
+    const content = mergeLandingContent(settings.content);
+    if (!content.hero.videoStoredPath) {
+      res.status(404).json({ error: "Video no encontrado" });
+      return;
+    }
+    const filePath = resolveStoredFile(content.hero.videoStoredPath);
+    res.setHeader("Content-Type", content.hero.videoMimeType ?? "video/mp4");
+    res.sendFile(filePath);
+  } catch (err) {
+    next(err);
+  }
+});
+
+landingRouter.get("/hero/poster/file", async (_req, res, next) => {
+  try {
+    const settings = await getOrCreateSettings();
+    const content = mergeLandingContent(settings.content);
+    if (!content.hero.posterStoredPath) {
+      res.status(404).json({ error: "Poster no encontrado" });
+      return;
+    }
+    const filePath = resolveStoredFile(content.hero.posterStoredPath);
+    res.setHeader("Content-Type", content.hero.posterMimeType ?? "image/jpeg");
+    res.sendFile(filePath);
   } catch (err) {
     next(err);
   }
@@ -118,10 +170,10 @@ landingAdminRouter.put("/settings", async (req, res, next) => {
   }
 });
 
-landingAdminRouter.get("/content", async (_req, res, next) => {
+landingAdminRouter.get("/content", async (req, res, next) => {
   try {
     const settings = await getOrCreateSettings();
-    res.json(mergeLandingContent(settings.content));
+    res.json(mapLandingContentToDto(mergeLandingContent(settings.content), req));
   } catch (err) {
     next(err);
   }
@@ -134,12 +186,8 @@ landingAdminRouter.put("/content", async (req, res, next) => {
       res.status(400).json({ error: "Contenido de landing inválido" });
       return;
     }
-    await prisma.landingSettings.upsert({
-      where: { id: "default" },
-      update: { content: content as object },
-      create: { id: "default", maxVisibleVehicles: 10, content: content as object },
-    });
-    res.json(content);
+    await saveLandingContent(content);
+    res.json(mapLandingContentToDto(content, req));
   } catch (err) {
     next(err);
   }
@@ -435,6 +483,109 @@ landingAdminRouter.delete("/vehicles/:id/images/:imageId", async (req, res, next
 
     const refreshed = await findVehicleOr404(id);
     res.json(mapCatalogVehicleToDto(refreshed!, req));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const heroVideoUpload = createHeroVideoUploader();
+const heroPosterUpload = createHeroPosterUploader();
+
+landingAdminRouter.post("/hero/video", (req, res, next) => {
+  heroVideoUpload.single("file")(req, res, (err: unknown) => {
+    if (err) {
+      const message = err instanceof Error ? err.message : "Error al subir video";
+      res.status(400).json({ error: message });
+      return;
+    }
+    void saveHeroVideo(req, res, next);
+  });
+});
+
+async function saveHeroVideo(req: Request, res: Response, next: NextFunction) {
+  try {
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: "Falta el archivo (campo file)" });
+      return;
+    }
+    const settings = await getOrCreateSettings();
+    const content = mergeLandingContent(settings.content);
+    await deleteStoredPathIfExists(content.hero.videoStoredPath);
+    content.hero = {
+      ...content.hero,
+      videoStoredPath: relativeStoredPath(file.path),
+      videoMimeType: file.mimetype,
+    };
+    await saveLandingContent(content);
+    res.json(mapLandingContentToDto(content, req));
+  } catch (err) {
+    next(err);
+  }
+}
+
+landingAdminRouter.delete("/hero/video", async (req, res, next) => {
+  try {
+    const settings = await getOrCreateSettings();
+    const content = mergeLandingContent(settings.content);
+    await deleteStoredPathIfExists(content.hero.videoStoredPath);
+    content.hero = {
+      ...content.hero,
+      videoStoredPath: null,
+      videoMimeType: null,
+    };
+    await saveLandingContent(content);
+    res.json(mapLandingContentToDto(content, req));
+  } catch (err) {
+    next(err);
+  }
+});
+
+landingAdminRouter.post("/hero/poster", (req, res, next) => {
+  heroPosterUpload.single("file")(req, res, (err: unknown) => {
+    if (err) {
+      const message = err instanceof Error ? err.message : "Error al subir poster";
+      res.status(400).json({ error: message });
+      return;
+    }
+    void saveHeroPoster(req, res, next);
+  });
+});
+
+async function saveHeroPoster(req: Request, res: Response, next: NextFunction) {
+  try {
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: "Falta el archivo (campo file)" });
+      return;
+    }
+    const settings = await getOrCreateSettings();
+    const content = mergeLandingContent(settings.content);
+    await deleteStoredPathIfExists(content.hero.posterStoredPath);
+    content.hero = {
+      ...content.hero,
+      posterStoredPath: relativeStoredPath(file.path),
+      posterMimeType: file.mimetype,
+    };
+    await saveLandingContent(content);
+    res.json(mapLandingContentToDto(content, req));
+  } catch (err) {
+    next(err);
+  }
+}
+
+landingAdminRouter.delete("/hero/poster", async (req, res, next) => {
+  try {
+    const settings = await getOrCreateSettings();
+    const content = mergeLandingContent(settings.content);
+    await deleteStoredPathIfExists(content.hero.posterStoredPath);
+    content.hero = {
+      ...content.hero,
+      posterStoredPath: null,
+      posterMimeType: null,
+    };
+    await saveLandingContent(content);
+    res.json(mapLandingContentToDto(content, req));
   } catch (err) {
     next(err);
   }

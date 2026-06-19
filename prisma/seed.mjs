@@ -104,6 +104,21 @@ function imageId(vehicleId, index) {
 }
 
 const DEFAULT_LANDING_CONTENT = {
+  hero: {
+    badge: 'Tu propio vehículo en 60 meses',
+    titleBefore: 'Drive Today, ',
+    titleHighlight: 'Yours Tomorrow',
+    description:
+      'Modelo Rent to Own para conductores de Uber, DiDi y más. Pagos semanales y al finalizar el plazo, ¡el vehículo es tuyo!',
+    primaryButtonText: 'Comenzar Ahora',
+    secondaryButtonText: 'Ver Cómo Funciona',
+    videoUrl: '/hero/hero-bg.mp4',
+    posterUrl: '/hero/hero-poster.jpg',
+    videoStoredPath: null,
+    posterStoredPath: null,
+    videoMimeType: null,
+    posterMimeType: null,
+  },
   benefits: {
     badge: 'Beneficios atoo',
     titleBefore: '¿Por Qué Elegir ',
