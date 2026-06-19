@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { landingAdminRouter, landingRouter } from "./routes/landing.js";
 import { authRouter } from "./routes/auth.js";
 import { documentsRouter } from "./routes/documents.js";
 import { usersRouter } from "./routes/users.js";
@@ -70,6 +71,8 @@ app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", usersRouter);
 app.use("/api/v1/users/:userId/documents", documentsRouter);
 app.use("/api/v1/vehicles", vehiclesRouter);
+app.use("/api/v1/landing", landingRouter);
+app.use("/api/v1/admin/landing", landingAdminRouter);
 
 app.use(errorHandler);
 

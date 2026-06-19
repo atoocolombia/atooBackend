@@ -18,6 +18,56 @@ model Vehicle {
   updatedAt DateTime @updatedAt
 }
 
+enum CatalogVehicleType {
+  CARRO
+  CAMIONETA
+}
+
+/// Ajustes globales de la landing (cantidad de vehículos visibles, etc.).
+model LandingSettings {
+  id                 String   @id @default("default")
+  maxVisibleVehicles Int      @default(10)
+  updatedAt          DateTime @updatedAt
+}
+
+/// Vehículos del catálogo mostrados en la landing.
+model CatalogVehicle {
+  id             String               @id
+  slug           String               @unique
+  name           String
+  subtitle       String
+  type           CatalogVehicleType
+  highlights     Json
+  features       Json
+  specs          Json
+  badge          String?
+  popular        Boolean              @default(false)
+  weeklyPriceCop Int
+  active         Boolean              @default(true)
+  sortOrder      Int                  @default(0)
+  specSheetPath  String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  images         CatalogVehicleImage[]
+}
+
+/// Imágenes del catálogo: archivo en disco (`storedPath`) o URL estática legacy (`publicUrl`).
+model CatalogVehicleImage {
+  id           String         @id
+  vehicleId    String
+  vehicle      CatalogVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  storedPath   String?
+  publicUrl    String?
+  originalName String
+  mimeType     String
+  sizeBytes    Int            @default(0)
+  sortOrder    Int            @default(0)
+  isPrimary    Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+
+  @@index([vehicleId])
+}
+
 enum UserType {
   USER
   ADVISOR
