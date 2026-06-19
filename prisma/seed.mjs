@@ -103,11 +103,113 @@ function imageId(vehicleId, index) {
   return `${vehicleId}IMG${String(index).padStart(2, '0')}`;
 }
 
+const DEFAULT_LANDING_CONTENT = {
+  benefits: {
+    badge: 'Beneficios atoo',
+    titleBefore: '¿Por Qué Elegir ',
+    titleHighlight: 'atoo',
+    titleAfter: '?',
+    description:
+      'La mejor alternativa para que puedas tener tu propio vehículo mientras generas ingresos.',
+    items: [
+      {
+        icon: 'trending-up',
+        title: 'Incrementa tus Ganancias',
+        description:
+          'Sin pagos de renta diarios. Todo lo que ganes es tuyo mientras cumples tu cuota semanal.',
+        gradient: 'from-[#1A1FE8] to-[#3D42F0]',
+      },
+      {
+        icon: 'shield',
+        title: 'Sin Enganche',
+        description: 'Comienza a conducir tu vehículo sin necesidad de desembolso inicial.',
+        gradient: 'from-cyan-500 to-[#1A1FE8]',
+      },
+      {
+        icon: 'clock',
+        title: 'Proceso Rápido',
+        description: 'Aprobación en 24 horas. Mínimos requisitos y trámites simples.',
+        gradient: 'from-emerald-500 to-teal-600',
+      },
+      {
+        icon: 'heart',
+        title: 'Seguro Incluido',
+        description: 'Todos nuestros vehículos incluyen seguro de cobertura amplia.',
+        gradient: 'from-[#1A1FE8] to-[#6B70F5]',
+      },
+      {
+        icon: 'wrench',
+        title: 'Mantenimiento',
+        description: 'Servicio y mantenimiento preventivo incluido durante el periodo de renta.',
+        gradient: 'from-orange-500 to-amber-500',
+      },
+      {
+        icon: 'percent',
+        title: 'Mejores Tasas',
+        description: 'Tasas competitivas y transparentes. Sin cargos ocultos.',
+        gradient: 'from-[#3D42F0] to-[#1A1FE8]',
+      },
+    ],
+  },
+  steps: {
+    badge: 'Proceso Simple',
+    titleBefore: '¿Cómo ',
+    titleHighlight: 'Funciona',
+    titleAfter: '?',
+    description: 'En solo 4 pasos simples estarás manejando tu futuro vehículo',
+    ctaText: 'Iniciar Mi Solicitud',
+    ctaNote: '⚡ Respuesta en menos de 24 horas',
+    items: [
+      {
+        number: '01',
+        icon: 'file-text',
+        title: 'Solicitud',
+        description:
+          'Completa el formulario en línea con tus datos básicos. Solo necesitas INE y comprobante de domicilio.',
+      },
+      {
+        number: '02',
+        icon: 'check-circle-2',
+        title: 'Aprobación',
+        description:
+          'Nuestro equipo revisa tu solicitud y te contacta en menos de 24 horas con una respuesta.',
+      },
+      {
+        number: '03',
+        icon: 'car',
+        title: 'Entrega',
+        description: 'Elige tu vehículo y firma el contrato. Comienza a conducir el mismo día.',
+      },
+      {
+        number: '04',
+        icon: 'trophy',
+        title: '¡Es Tuyo!',
+        description:
+          'Después de 60 meses de pagos semanales puntuales, el vehículo pasa a tu nombre.',
+      },
+    ],
+  },
+  contact: {
+    badge: '¡Comienza Tu Viaje Hoy!',
+    titleBefore: '¿Listo para ',
+    titleHighlight: 'Yours Tomorrow',
+    titleAfter: '?',
+    description:
+      'Únete a más de {count} que ya están construyendo su patrimonio mientras trabajan',
+    driverCount: '100 conductores',
+    phoneLabel: 'Llámanos',
+    phone: '55 1234 5678',
+    emailLabel: 'Escríbenos',
+    email: 'hola@atoo.com',
+    trustItems: ['Aprobación en 24h', 'Sin enganche', 'Pagos semanales'],
+  },
+};
+
 async function seedCatalog() {
   await prisma.landingSettings.upsert({
     where: { id: 'default' },
     update: {},
-    create: { id: 'default', maxVisibleVehicles: 10 },
+    create: { id: 'default', maxVisibleVehicles: 10, content: DEFAULT_LANDING_CONTENT },
   });
 
   for (const v of CATALOG_VEHICLES) {

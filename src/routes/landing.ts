@@ -4,6 +4,11 @@ import { Router } from "express";
 import fs from "node:fs/promises";
 import { mapCatalogVehicleToDto } from "../lib/catalogVehicleMapper.js";
 import { createCatalogVehicleImageUploader, relativeStoredPath } from "../lib/catalogVehicleUpload.js";
+import {
+  defaultLandingContent,
+  mergeLandingContent,
+  validateLandingContent,
+} from "../lib/landingContentDefaults.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { prisma } from "../lib/prisma.js";
 import { resolveStoredFile } from "../lib/uploadStorage.js";
@@ -40,6 +45,15 @@ landingRouter.get("/settings", async (_req, res, next) => {
   try {
     const settings = await getOrCreateSettings();
     res.json({ maxVisibleVehicles: settings.maxVisibleVehicles });
+  } catch (err) {
+    next(err);
+  }
+});
+
+landingRouter.get("/content", async (_req, res, next) => {
+  try {
+    const settings = await getOrCreateSettings();
+    res.json(mergeLandingContent(settings.content));
   } catch (err) {
     next(err);
   }
@@ -99,6 +113,33 @@ landingAdminRouter.put("/settings", async (req, res, next) => {
       create: { id: "default", maxVisibleVehicles },
     });
     res.json({ maxVisibleVehicles: settings.maxVisibleVehicles });
+  } catch (err) {
+    next(err);
+  }
+});
+
+landingAdminRouter.get("/content", async (_req, res, next) => {
+  try {
+    const settings = await getOrCreateSettings();
+    res.json(mergeLandingContent(settings.content));
+  } catch (err) {
+    next(err);
+  }
+});
+
+landingAdminRouter.put("/content", async (req, res, next) => {
+  try {
+    const content = validateLandingContent(req.body);
+    if (!content) {
+      res.status(400).json({ error: "Contenido de landing inválido" });
+      return;
+    }
+    await prisma.landingSettings.upsert({
+      where: { id: "default" },
+      update: { content: content as object },
+      create: { id: "default", maxVisibleVehicles: 10, content: content as object },
+    });
+    res.json(content);
   } catch (err) {
     next(err);
   }

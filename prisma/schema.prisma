@@ -27,6 +27,7 @@ enum CatalogVehicleType {
 model LandingSettings {
   id                 String   @id @default("default")
   maxVisibleVehicles Int      @default(10)
+  content            Json?
   updatedAt          DateTime @updatedAt
 }
 
