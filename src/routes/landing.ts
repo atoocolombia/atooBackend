@@ -12,6 +12,7 @@ import {
   type LandingContent,
 } from "../lib/landingContentDefaults.js";
 import { createHeroPosterUploader, createHeroVideoUploader } from "../lib/landingHeroUpload.js";
+import { readActorEmail, recordLandingAudit } from "../lib/landingAuditLog.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { prisma } from "../lib/prisma.js";
 import { resolveStoredFile } from "../lib/uploadStorage.js";
@@ -164,6 +165,12 @@ landingAdminRouter.put("/settings", async (req, res, next) => {
       update: { maxVisibleVehicles },
       create: { id: "default", maxVisibleVehicles },
     });
+    await recordLandingAudit(
+      readActorEmail(req),
+      "settings.update",
+      `Límite de vehículos visibles: ${settings.maxVisibleVehicles}`,
+      { maxVisibleVehicles: settings.maxVisibleVehicles },
+    );
     res.json({ maxVisibleVehicles: settings.maxVisibleVehicles });
   } catch (err) {
     next(err);
@@ -187,7 +194,26 @@ landingAdminRouter.put("/content", async (req, res, next) => {
       return;
     }
     await saveLandingContent(content);
+    await recordLandingAudit(
+      readActorEmail(req),
+      "content.update",
+      "Actualizó contenido de la landing (textos/secciones)",
+    );
     res.json(mapLandingContentToDto(content, req));
+  } catch (err) {
+    next(err);
+  }
+});
+
+landingAdminRouter.get("/audit-logs", async (req, res, next) => {
+  try {
+    const limitRaw = Number(req.query.limit ?? 50);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+    const logs = await prisma.landingAuditLog.findMany({
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+    res.json(logs);
   } catch (err) {
     next(err);
   }
@@ -256,6 +282,12 @@ landingAdminRouter.post("/vehicles", async (req, res, next) => {
       res.status(500).json({ error: "No se pudo crear el vehículo" });
       return;
     }
+    await recordLandingAudit(
+      readActorEmail(req),
+      "vehicle.create",
+      `Creó vehículo "${created.name}"`,
+      { vehicleId: created.id, slug: created.slug },
+    );
     res.status(201).json(mapCatalogVehicleToDto(created, req));
   } catch (err) {
     next(err);
@@ -304,6 +336,12 @@ landingAdminRouter.put("/vehicles/:id", async (req, res, next) => {
       data,
       include: vehicleInclude,
     });
+    await recordLandingAudit(
+      readActorEmail(req),
+      "vehicle.update",
+      `Actualizó vehículo "${updated.name}"`,
+      { vehicleId: updated.id, slug: updated.slug },
+    );
     res.json(mapCatalogVehicleToDto(updated, req));
   } catch (err) {
     next(err);
@@ -330,6 +368,12 @@ landingAdminRouter.delete("/vehicles/:id", async (req, res, next) => {
     }
 
     await prisma.catalogVehicle.delete({ where: { id: vehicleId } });
+    await recordLandingAudit(
+      readActorEmail(req),
+      "vehicle.delete",
+      `Eliminó vehículo "${vehicle.name}"`,
+      { vehicleId, slug: vehicle.slug },
+    );
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -402,6 +446,12 @@ async function saveCatalogImage(req: Request, res: Response, next: NextFunction)
     }
 
     const refreshed = await findVehicleOr404(vehicle.id);
+    await recordLandingAudit(
+      readActorEmail(req),
+      "vehicle.image.upload",
+      `Subió imagen a "${vehicle.name}"`,
+      { vehicleId: vehicle.id, imageId: image.id, originalName: file.originalname },
+    );
     res.status(201).json(mapCatalogVehicleToDto(refreshed!, req));
   } catch (err) {
     next(err);
@@ -441,6 +491,13 @@ landingAdminRouter.patch("/vehicles/:id/images/:imageId", async (req, res, next)
     }
 
     const refreshed = await findVehicleOr404(id);
+    const summary = body.isPrimary
+      ? "Marcó imagen principal de vehículo"
+      : "Actualizó imagen de vehículo";
+    await recordLandingAudit(readActorEmail(req), "vehicle.image.update", summary, {
+      vehicleId: id,
+      imageId,
+    });
     res.json(mapCatalogVehicleToDto(refreshed!, req));
   } catch (err) {
     next(err);
@@ -482,6 +539,10 @@ landingAdminRouter.delete("/vehicles/:id/images/:imageId", async (req, res, next
     }
 
     const refreshed = await findVehicleOr404(id);
+    await recordLandingAudit(readActorEmail(req), "vehicle.image.delete", "Eliminó imagen de vehículo", {
+      vehicleId: id,
+      imageId,
+    });
     res.json(mapCatalogVehicleToDto(refreshed!, req));
   } catch (err) {
     next(err);
@@ -518,6 +579,7 @@ async function saveHeroVideo(req: Request, res: Response, next: NextFunction) {
       videoMimeType: file.mimetype,
     };
     await saveLandingContent(content);
+    await recordLandingAudit(readActorEmail(req), "hero.video.upload", "Subió video del hero");
     res.json(mapLandingContentToDto(content, req));
   } catch (err) {
     next(err);
@@ -535,6 +597,7 @@ landingAdminRouter.delete("/hero/video", async (req, res, next) => {
       videoMimeType: null,
     };
     await saveLandingContent(content);
+    await recordLandingAudit(readActorEmail(req), "hero.video.delete", "Restauró video por defecto del hero");
     res.json(mapLandingContentToDto(content, req));
   } catch (err) {
     next(err);
@@ -568,6 +631,7 @@ async function saveHeroPoster(req: Request, res: Response, next: NextFunction) {
       posterMimeType: file.mimetype,
     };
     await saveLandingContent(content);
+    await recordLandingAudit(readActorEmail(req), "hero.poster.upload", "Subió poster del hero");
     res.json(mapLandingContentToDto(content, req));
   } catch (err) {
     next(err);
@@ -585,6 +649,7 @@ landingAdminRouter.delete("/hero/poster", async (req, res, next) => {
       posterMimeType: null,
     };
     await saveLandingContent(content);
+    await recordLandingAudit(readActorEmail(req), "hero.poster.delete", "Restauró poster por defecto del hero");
     res.json(mapLandingContentToDto(content, req));
   } catch (err) {
     next(err);

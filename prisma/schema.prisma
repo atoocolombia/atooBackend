@@ -31,6 +31,19 @@ model LandingSettings {
   updatedAt          DateTime @updatedAt
 }
 
+/// Historial de cambios en el panel admin de la landing.
+model LandingAuditLog {
+  id         String   @id
+  actorEmail String
+  action     String
+  summary    String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actorEmail])
+}
+
 /// Vehículos del catálogo mostrados en la landing.
 model CatalogVehicle {
   id             String               @id

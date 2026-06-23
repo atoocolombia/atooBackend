@@ -12,6 +12,7 @@ export const DOCUMENT_KINDS = new Set([
   "platformWork3",
   "platformWork4",
   "bankDocument",
+  "creditReport",
   "utilityAddressReceipt",
   "simitPazYSalvo",
   "policeCriminalRecord",

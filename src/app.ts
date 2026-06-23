@@ -50,6 +50,7 @@ app.use(
       console.warn(`[cors] Origen rechazado: ${origin}`);
       callback(null, false);
     },
+    allowedHeaders: ["Content-Type", "X-Actor-Email"],
   }),
 );
 app.use(express.json());
