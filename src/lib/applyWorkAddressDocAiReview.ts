@@ -11,6 +11,7 @@ import {
 } from "./userWorkAddressExtraction.js";
 import {
   verifyBankDocumentAgainstIdentity,
+  verifyCreditReportAgainstIdentity,
   verifyPlatformWorkCapture,
   verifyUtilityReceiptAddress,
 } from "./verifyWorkAddressDocuments.js";
@@ -132,6 +133,16 @@ export async function applyWorkAddressDocAiReview(documentId: string): Promise<W
         },
         update: { bankHolderMatchesIdentity: v.extraction.matchesIdentity },
       });
+    }
+  } else if (meta.documentKind === "creditReport") {
+    const v = await verifyCreditReportAgainstIdentity(buf, meta.mimeType, {
+      expectedFirstName: firstName,
+      expectedLastName: lastName,
+    });
+    if (!v.ok) {
+      rejectMessage = v.message;
+    } else {
+      finalOk = true;
     }
   } else if (meta.documentKind === "utilityAddressReceipt") {
     const v = await verifyUtilityReceiptAddress(buf, meta.mimeType);

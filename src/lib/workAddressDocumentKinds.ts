@@ -4,6 +4,7 @@ export const WORK_ADDRESS_AI_DOCUMENT_KINDS = new Set([
   "platformWork3",
   "platformWork4",
   "bankDocument",
+  "creditReport",
   "utilityAddressReceipt",
 ]);
 

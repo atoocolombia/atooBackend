@@ -29,6 +29,8 @@ const ALLOWED_MIMES = new Set(
       "image/png",
       "image/gif",
       "image/webp",
+      "image/heic",
+      "image/heif",
       "application/pdf",
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

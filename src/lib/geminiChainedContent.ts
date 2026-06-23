@@ -1,16 +1,10 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { GenerateContentResult } from "@google/generative-ai";
+import { resolveGeminiModelChain } from "./geminiModels.js";
 
 export type GeminiContentPart =
   | { inlineData: { mimeType: string; data: string } }
   | { text: string };
-
-const DEFAULT_MODEL_CHAIN = [
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash-latest",
-  "gemini-1.5-flash",
-] as const;
 
 export function extractJsonObjectFromModelText(text: string): Record<string, unknown> {
   const trimmed = text.trim();
@@ -32,20 +26,8 @@ function parseRetryDelayMs(message: string): number | null {
   return Math.min(25_000, Math.ceil(sec * 1000) + 500);
 }
 
-function buildModelChain(): string[] {
-  const extra = process.env.GEMINI_MODEL_FALLBACKS?.trim();
-  const fromEnv = extra
-    ? extra
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
-  const primary = process.env.GEMINI_MODEL?.trim();
-  const defaults = [...DEFAULT_MODEL_CHAIN];
-  const merged = primary
-    ? [primary, ...defaults.filter((m) => m !== primary), ...fromEnv.filter((m) => m !== primary)]
-    : [...defaults, ...fromEnv];
-  return [...new Set(merged)];
+function buildModelChain(logPrefix: string): string[] {
+  return resolveGeminiModelChain(logPrefix);
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -76,7 +58,7 @@ export async function generateContentWithModelChain(
   logPrefix: string,
 ): Promise<{ text: string }> {
   const genAI = new GoogleGenerativeAI(apiKey);
-  const chain = buildModelChain();
+  const chain = buildModelChain(logPrefix);
   logLine(logPrefix, `Cadena de modelos: ${chain.join(" → ")}`);
 
   let lastError: unknown;

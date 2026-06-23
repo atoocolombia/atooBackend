@@ -1,18 +1,17 @@
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
 import { extractJsonObjectFromModelText, generateContentWithModelChain, type GeminiContentPart } from "./geminiChainedContent.js";
+import { inlineMimeForGemini } from "./geminiImageMimes.js";
 import { isIdentityAiDocumentKind } from "./identityDocumentKinds.js";
 
 const LOG_PREFIX = "[identity-docs-ai]";
 const MAX_BYTES = 15 * 1024 * 1024;
 const MIN_BYTES = 400;
 
-const GEMINI_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-
 const USER = {
   fileTooSmall: documentMessage("El archivo parece vacío o dañado. Prueba con otra foto o PDF."),
   fileTooBig: documentMessage("El archivo es demasiado grande (máx. 15 MB). Reduce el tamaño e inténtalo de nuevo."),
   mimeUnsupported: documentMessage(
-    "Formato no admitido para la revisión automática. Usa PDF o imagen JPG, PNG, GIF o WebP.",
+    "Formato no admitido para la revisión automática. Usa PDF o imagen JPG, PNG, HEIC, GIF o WebP.",
   ),
   aiUnavailable: platformMessage("No pudimos conectar con el servicio de revisión. Inténtalo de nuevo en unos minutos."),
   aiRejectedDoc: documentMessage(
@@ -37,12 +36,6 @@ function logDiagnostic(message: string, extra?: unknown): void {
   } else {
     console.error(`${LOG_PREFIX} ${message}`);
   }
-}
-
-function inlineMimeForGemini(mimeType: string): string | null {
-  if (mimeType === "application/pdf") return "application/pdf";
-  if (GEMINI_IMAGE_MIMES.has(mimeType)) return mimeType;
-  return null;
 }
 
 function buildPrompt(documentKind: string): string {

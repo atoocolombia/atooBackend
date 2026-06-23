@@ -5,7 +5,7 @@ const LOG_PREFIX = "[work-address-docs-ai]";
 const MAX_BYTES = 15 * 1024 * 1024;
 const MIN_BYTES = 400;
 
-const GEMINI_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const GEMINI_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif"]);
 
 const USER = {
   fileTooSmall: documentMessage("El archivo parece vacío o dañado. Prueba con otra foto o PDF."),
@@ -37,6 +37,12 @@ const USER = {
   ),
   bankMismatch: documentMessage(
     "El titular o datos del documento bancario no coinciden de forma clara con tu identificación ya registrada.",
+  ),
+  creditGeneric: documentMessage(
+    "No pudimos validar el historial crediticio. Sube un informe de DataCrédito o centrales de riesgo legible.",
+  ),
+  creditMismatch: documentMessage(
+    "El nombre en el historial crediticio no coincide de forma clara con tu identificación ya registrada.",
   ),
   utilityGeneric: documentMessage(
     "No pudimos leer el recibo. Sube un servicio público o recibo reciente con la dirección del domicilio legible.",
@@ -162,6 +168,25 @@ Responde ÚNICAMENTE JSON válido:
 {"looksLikeBankDocument":boolean,"holderNameLegible":boolean,"holderNameMatchesExpected":boolean,"idMatchesIfPresent":boolean,"qualityAcceptableForReview":boolean,"allRequirementsMet":boolean,"userMessageEs":"string breve en español si algo falla"}
 
 allRequirementsMet true solo si las condiciones coherentes con el archivo son true.`;
+}
+
+function buildCreditReportPrompt(ctx: { expectedFirstName: string; expectedLastName: string }): string {
+  return `Analiza este archivo (imagen o PDF). Debe ser un **informe de historial crediticio** de Colombia (DataCrédito, TransUnion, Experian u otra central de riesgo reconocida).
+
+Titular esperado según identificación ya validada:
+- Nombres: "${ctx.expectedFirstName}"
+- Apellidos: "${ctx.expectedLastName}"
+
+Evalúa:
+1) looksLikeCreditReport: parece informe crediticio o consulta de centrales de riesgo (no un extracto bancario genérico ni recibo).
+2) subjectNameLegible: se lee el nombre de la persona consultada.
+3) subjectNameMatchesExpected: el nombre coincide de forma razonable con el titular esperado.
+4) qualityAcceptableForReview: legible lo suficiente.
+
+Responde ÚNICAMENTE JSON válido:
+{"looksLikeCreditReport":boolean,"subjectNameLegible":boolean,"subjectNameMatchesExpected":boolean,"qualityAcceptableForReview":boolean,"allRequirementsMet":boolean,"userMessageEs":"string breve en español si algo falla"}
+
+allRequirementsMet true solo si las condiciones coherentes son true.`;
 }
 
 const UTILITY_PROMPT = `Analiza este archivo (imagen o PDF). Debe ser un **recibo de servicio público o privado** (luz, agua, gas, internet, administración, etc.) o documento equivalente donde conste una **dirección de servicio / vivienda** en Colombia.
@@ -396,6 +421,66 @@ export async function verifyUtilityReceiptAddress(
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
     logDiagnostic("verifyUtilityReceiptAddress fallo", raw);
+    if (/429|quota|RESOURCE_EXHAUSTED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
+    if (/404|not supported for generateContent/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
+    if (/API key|401|PERMISSION_DENIED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
+    return { ok: false, message: USER.aiUnavailable };
+  }
+}
+
+export async function verifyCreditReportAgainstIdentity(
+  buffer: Buffer,
+  mimeType: string,
+  ctx: { expectedFirstName: string; expectedLastName: string },
+): Promise<BankVerifyResult> {
+  if (buffer.length < MIN_BYTES) return { ok: false, message: USER.fileTooSmall };
+  if (buffer.length > MAX_BYTES) return { ok: false, message: USER.fileTooBig };
+  const inlineMime = inlineMimeForGemini(mimeType);
+  if (!inlineMime) return { ok: false, message: USER.mimeUnsupported };
+
+  if (skipAi()) {
+    return { ok: true, extraction: { matchesIdentity: true } };
+  }
+
+  const fn = ctx.expectedFirstName.trim();
+  const ln = ctx.expectedLastName.trim();
+  if (!fn && !ln) return { ok: false, message: USER.needIdentityFirst };
+
+  const parts: GeminiContentPart[] = [
+    { inlineData: { mimeType: inlineMime, data: buffer.toString("base64") } },
+    {
+      text: buildCreditReportPrompt({
+        expectedFirstName: fn || "—",
+        expectedLastName: ln || "—",
+      }),
+    },
+  ];
+
+  try {
+    const apiKey = process.env.GEMINI_API_KEY!.trim();
+    const { text } = await generateContentWithModelChain(apiKey, parts, LOG_PREFIX);
+    const parsed = extractJsonObjectFromModelText(text);
+    const allMet = bool(parsed.allRequirementsMet);
+
+    if (
+      allMet &&
+      bool(parsed.looksLikeCreditReport) &&
+      bool(parsed.subjectNameLegible) &&
+      bool(parsed.subjectNameMatchesExpected) &&
+      bool(parsed.qualityAcceptableForReview)
+    ) {
+      return { ok: true, extraction: { matchesIdentity: true } };
+    }
+
+    if (bool(parsed.looksLikeCreditReport) && !bool(parsed.subjectNameMatchesExpected)) {
+      return { ok: false, message: USER.creditMismatch };
+    }
+
+    const hint = str(parsed.userMessageEs);
+    return { ok: false, message: hint ?? USER.creditGeneric };
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    logDiagnostic("verifyCreditReportAgainstIdentity fallo", raw);
     if (/429|quota|RESOURCE_EXHAUSTED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
     if (/404|not supported for generateContent/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
     if (/API key|401|PERMISSION_DENIED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
