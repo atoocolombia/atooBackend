@@ -6,6 +6,7 @@ import { authRouter } from "./routes/auth.js";
 import { documentsRouter } from "./routes/documents.js";
 import { usersRouter } from "./routes/users.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
+import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
 
 const app = express();
 
@@ -59,6 +60,29 @@ app.get("/health", (_req, res) => {
   res.status(200).json({
     ok: true,
     service: "landing-backend",
+  });
+});
+
+/** Diagnóstico de IA (no expone la API key). */
+app.get("/health/ai", (_req, res) => {
+  const hasKey = Boolean(process.env.GEMINI_API_KEY?.trim());
+  const skipAi = process.env.DATA_TREATMENT_SKIP_AI_VERIFY === "true";
+  const configuredModel = process.env.GEMINI_MODEL?.trim() || null;
+
+  res.status(200).json({
+    ok: hasKey && !skipAi,
+    geminiApiKeyConfigured: hasKey,
+    skipAiVerify: skipAi,
+    configuredModel,
+    modelDeprecated: configuredModel ? DEPRECATED_GEMINI_MODELS.has(configuredModel) : false,
+    modelChain: resolveGeminiModelChain("[health/ai]"),
+    hint: !hasKey
+      ? "Falta GEMINI_API_KEY en Railway (https://aistudio.google.com/apikey)."
+      : skipAi
+        ? "DATA_TREATMENT_SKIP_AI_VERIFY=true desactiva la IA."
+        : configuredModel && DEPRECATED_GEMINI_MODELS.has(configuredModel)
+          ? `Cambia GEMINI_MODEL a gemini-2.5-flash (el valor "${configuredModel}" ya no existe).`
+          : "Configuración básica OK. Si falla al subir, revisa cuota de Gemini en Google AI Studio.",
   });
 });
 
