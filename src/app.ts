@@ -3,6 +3,7 @@ import express from "express";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { landingAdminRouter, landingRouter } from "./routes/landing.js";
 import { authRouter } from "./routes/auth.js";
+import { adminWorkshopsRouter } from "./routes/adminWorkshops.js";
 import { documentsRouter } from "./routes/documents.js";
 import { inspectionsRouter } from "./routes/inspections.js";
 import { usersRouter } from "./routes/users.js";
@@ -102,6 +103,7 @@ app.use("/api/v1/workshop/:userId", workshopPortalRouter);
 app.use("/api/v1/vehicles", vehiclesRouter);
 app.use("/api/v1/landing", landingRouter);
 app.use("/api/v1/admin/landing", landingAdminRouter);
+app.use("/api/v1/admin/workshops", adminWorkshopsRouter);
 
 app.use(errorHandler);
 
