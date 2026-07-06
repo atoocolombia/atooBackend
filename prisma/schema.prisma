@@ -87,6 +87,7 @@ enum UserType {
   ADVISOR
   ADMIN
   ANALYST
+  WORKSHOP
 }
 
 enum DocumentValidationStatus {
@@ -107,6 +108,9 @@ model User {
   documents             Document[]
   identityExtraction    UserIdentityExtraction?
   workAddressExtraction UserWorkAddressExtraction?
+  vehiclePlan           ClientVehiclePlan?
+  inspectionAppointments InspectionAppointment[] @relation("ClientInspectionAppointments")
+  managedWorkshop       Workshop?
 }
 
 /// Archivos o imágenes subidos por usuario (metadatos en BD; bytes en disco bajo uploads/).
@@ -172,4 +176,89 @@ model UserWorkAddressExtraction {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum InspectionAppointmentKind {
+  BUSINESS_PLANNED
+  CLIENT_REQUESTED
+}
+
+enum InspectionAppointmentStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+/// Taller asociado a atoo; el usuario WORKSHOP gestiona disponibilidad y citas.
+model Workshop {
+  id        String   @id
+  name      String
+  address   String
+  city      String
+  phone     String?
+  latitude  Float?
+  longitude Float?
+  active    Boolean  @default(true)
+  userId    String?  @unique
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  slots     WorkshopAvailabilitySlot[]
+  appointments InspectionAppointment[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Franjas de disponibilidad que el taller publica (fecha, horario y cupos).
+model WorkshopAvailabilitySlot {
+  id              String   @id
+  workshopId      String
+  workshop        Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  date            String
+  startTime       String
+  endTime         String
+  maxAppointments Int
+  bookedCount     Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([workshopId, date, startTime])
+  @@index([workshopId, date])
+}
+
+/// Plan de revisión técnico-mecánica asignado al entregar el vehículo (solo lectura para el cliente).
+model ClientVehiclePlan {
+  userId              String   @id
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleName         String
+  vin                 String?
+  deliveredAt         DateTime
+  nextInspectionDueAt DateTime
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+/// Citas de revisión: planificadas por el negocio o solicitadas por el cliente.
+model InspectionAppointment {
+  id                String                      @id
+  userId            String
+  user              User                        @relation("ClientInspectionAppointments", fields: [userId], references: [id], onDelete: Cascade)
+  workshopId        String
+  workshop          Workshop                    @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  kind              InspectionAppointmentKind
+  status            InspectionAppointmentStatus @default(PENDING)
+  appointmentDate   String
+  appointmentTime   String?
+  reason            String?
+  proofStoredPath   String?
+  proofMimeType     String?
+  proofOriginalName String?
+  proofSizeBytes    Int?
+  workshopNotes     String?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+
+  @@index([userId])
+  @@index([workshopId, appointmentDate])
+  @@index([workshopId, status])
 }

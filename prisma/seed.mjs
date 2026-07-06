@@ -23,6 +23,12 @@ const DEFAULT_USERS = [
     password: '12345',
     userType: 'ANALYST',
   },
+  {
+    id: '1234TLL',
+    email: 'taller@gmail.com',
+    password: '12345',
+    userType: 'WORKSHOP',
+  },
 ];
 
 const NAMMI_GALLERY = [
@@ -283,6 +289,101 @@ async function seedCatalog() {
   }
 }
 
+async function seedWorkshops() {
+  const workshopUser = await prisma.user.findUnique({ where: { email: 'taller@gmail.com' } });
+  if (!workshopUser) return;
+
+  const primary = await prisma.workshop.upsert({
+    where: { id: 'TLLBOG01' },
+    update: {
+      name: 'TecnoMecánica Drive Bogotá Norte',
+      address: 'Calle 170 #54-20',
+      city: 'Bogotá',
+      phone: '601 555 0101',
+      active: true,
+      userId: workshopUser.id,
+    },
+    create: {
+      id: 'TLLBOG01',
+      name: 'TecnoMecánica Drive Bogotá Norte',
+      address: 'Calle 170 #54-20',
+      city: 'Bogotá',
+      phone: '601 555 0101',
+      active: true,
+      userId: workshopUser.id,
+    },
+  });
+
+  await prisma.workshop.upsert({
+    where: { id: 'TLLMED01' },
+    update: {
+      name: 'Centro de Diagnóstico El Poblado',
+      address: 'Carrera 43A #16-145',
+      city: 'Medellín',
+      phone: '604 555 0202',
+      active: true,
+    },
+    create: {
+      id: 'TLLMED01',
+      name: 'Centro de Diagnóstico El Poblado',
+      address: 'Carrera 43A #16-145',
+      city: 'Medellín',
+      phone: '604 555 0202',
+      active: true,
+    },
+  });
+
+  const today = new Date();
+  const dates = [0, 1, 2, 3, 7].map((offset) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + offset);
+    return d.toISOString().slice(0, 10);
+  });
+
+  for (const workshopId of [primary.id, 'TLLMED01']) {
+    for (const date of dates) {
+      await prisma.workshopAvailabilitySlot.upsert({
+        where: {
+          workshopId_date_startTime: {
+            workshopId,
+            date,
+            startTime: '08:00',
+          },
+        },
+        update: { endTime: '12:00', maxAppointments: 4 },
+        create: {
+          id: `SL${workshopId}${date.replace(/-/g, '')}0800`,
+          workshopId,
+          date,
+          startTime: '08:00',
+          endTime: '12:00',
+          maxAppointments: 4,
+        },
+      });
+      await prisma.workshopAvailabilitySlot.upsert({
+        where: {
+          workshopId_date_startTime: {
+            workshopId,
+            date,
+            startTime: '14:00',
+          },
+        },
+        update: { endTime: '18:00', maxAppointments: 3 },
+        create: {
+          id: `SL${workshopId}${date.replace(/-/g, '')}1400`,
+          workshopId,
+          date,
+          startTime: '14:00',
+          endTime: '18:00',
+          maxAppointments: 3,
+        },
+      });
+    }
+  }
+
+  console.log('Talleres y disponibilidad listos');
+}
+
 async function main() {
   for (const user of DEFAULT_USERS) {
     const passwordHash = await bcrypt.hash(user.password, BCRYPT_ROUNDS);
@@ -300,6 +401,7 @@ async function main() {
   }
 
   await seedCatalog();
+  await seedWorkshops();
 }
 
 main()

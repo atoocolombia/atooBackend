@@ -4,8 +4,10 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { landingAdminRouter, landingRouter } from "./routes/landing.js";
 import { authRouter } from "./routes/auth.js";
 import { documentsRouter } from "./routes/documents.js";
+import { inspectionsRouter } from "./routes/inspections.js";
 import { usersRouter } from "./routes/users.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
+import { workshopPortalRouter } from "./routes/workshopPortal.js";
 import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
 
 const app = express();
@@ -95,6 +97,8 @@ app.get("/api/v1", (_req, res) => {
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", usersRouter);
 app.use("/api/v1/users/:userId/documents", documentsRouter);
+app.use("/api/v1/users/:userId/inspections", inspectionsRouter);
+app.use("/api/v1/workshop/:userId", workshopPortalRouter);
 app.use("/api/v1/vehicles", vehiclesRouter);
 app.use("/api/v1/landing", landingRouter);
 app.use("/api/v1/admin/landing", landingAdminRouter);
