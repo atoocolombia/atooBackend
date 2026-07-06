@@ -29,6 +29,12 @@ const DEFAULT_USERS = [
     password: '12345',
     userType: 'WORKSHOP',
   },
+  {
+    id: '1234CLI',
+    email: 'cliente@gmail.com',
+    password: '12345',
+    userType: 'USER',
+  },
 ];
 
 const NAMMI_GALLERY = [
@@ -384,6 +390,41 @@ async function seedWorkshops() {
   console.log('Talleres y disponibilidad listos');
 }
 
+async function seedClientDemo() {
+  const client = await prisma.user.findUnique({ where: { email: 'cliente@gmail.com' } });
+  if (!client) return;
+
+  const deliveredAt = new Date();
+  deliveredAt.setMonth(deliveredAt.getMonth() - 3);
+  const nextInspectionDueAt = new Date();
+  nextInspectionDueAt.setMonth(nextInspectionDueAt.getMonth() + 3);
+
+  await prisma.clientVehiclePlan.upsert({
+    where: { userId: client.id },
+    update: {
+      vehicleName: 'Dongfeng Nammi',
+      vin: 'LNBM2EV3XDEMO1234',
+      deliveredAt,
+      nextInspectionDueAt,
+    },
+    create: {
+      userId: client.id,
+      vehicleName: 'Dongfeng Nammi',
+      vin: 'LNBM2EV3XDEMO1234',
+      deliveredAt,
+      nextInspectionDueAt,
+    },
+  });
+
+  await prisma.userIdentityExtraction.upsert({
+    where: { userId: client.id },
+    update: { firstName: 'Cliente', lastName: 'Demo' },
+    create: { userId: client.id, firstName: 'Cliente', lastName: 'Demo' },
+  });
+
+  console.log('Cliente demo listo: cliente@gmail.com');
+}
+
 async function main() {
   for (const user of DEFAULT_USERS) {
     const passwordHash = await bcrypt.hash(user.password, BCRYPT_ROUNDS);
@@ -402,6 +443,7 @@ async function main() {
 
   await seedCatalog();
   await seedWorkshops();
+  await seedClientDemo();
 }
 
 main()
