@@ -10,7 +10,7 @@ export const adminWorkshopsRouter = Router();
 
 const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS ?? 12);
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const DEFAULT_WORKSHOP_PASSWORD = "12345";
+const DEFAULT_WORKSHOP_PASSWORD = "Atoo#Tll5hY6c";
 
 function paramWorkshopId(req: Request): string {
   const v = req.params.workshopId;

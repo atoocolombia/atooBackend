@@ -8,31 +8,31 @@ const DEFAULT_USERS = [
   {
     id: '1234ADM',
     email: 'admin@gmail.com',
-    password: '12345',
+    password: 'Atoo#Adm7kP2x',
     userType: 'ADMIN',
   },
   {
     id: '1234ASE',
     email: 'asesor@gmail.com',
-    password: '12345',
+    password: 'Atoo#Ase9mQ4w',
     userType: 'ADVISOR',
   },
   {
     id: '1234ANL',
     email: 'analista@gmail.com',
-    password: '12345',
+    password: 'Atoo#Anl3vR8n',
     userType: 'ANALYST',
   },
   {
     id: '1234TLL',
     email: 'taller@gmail.com',
-    password: '12345',
+    password: 'Atoo#Tll5hY6c',
     userType: 'WORKSHOP',
   },
   {
     id: '1234CLI',
     email: 'cliente@gmail.com',
-    password: '12345',
+    password: 'Atoo#Cli2nB9d',
     userType: 'USER',
   },
 ];
