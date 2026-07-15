@@ -111,6 +111,7 @@ model User {
   vehiclePlan           ClientVehiclePlan?
   inspectionAppointments InspectionAppointment[] @relation("ClientInspectionAppointments")
   managedWorkshop       Workshop?
+  notifications         UserNotification[]
 }
 
 /// Archivos o imágenes subidos por usuario (metadatos en BD; bytes en disco bajo uploads/).
@@ -189,6 +190,7 @@ enum InspectionAppointmentStatus {
   REJECTED
   COMPLETED
   CANCELLED
+  RESCHEDULE_PENDING
 }
 
 /// Taller asociado a atoo; el usuario WORKSHOP gestiona disponibilidad y citas.
@@ -249,6 +251,9 @@ model InspectionAppointment {
   status            InspectionAppointmentStatus @default(PENDING)
   appointmentDate   String
   appointmentTime   String?
+  proposedAppointmentDate String?
+  proposedAppointmentTime String?
+  rescheduleInitiatedBy   String?
   reason            String?
   proofStoredPath   String?
   proofMimeType     String?
@@ -261,4 +266,20 @@ model InspectionAppointment {
   @@index([userId])
   @@index([workshopId, appointmentDate])
   @@index([workshopId, status])
+}
+
+/// Notificaciones in-app para clientes (reagendamientos, confirmaciones, etc.).
+model UserNotification {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  metadata  Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt(sort: Desc)])
 }

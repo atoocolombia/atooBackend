@@ -11,6 +11,9 @@ export type InspectionAppointmentDto = {
   status: InspectionAppointment["status"];
   appointmentDate: string;
   appointmentTime: string | null;
+  proposedAppointmentDate: string | null;
+  proposedAppointmentTime: string | null;
+  rescheduleInitiatedBy: string | null;
   reason: string | null;
   proofOriginalName: string | null;
   workshopNotes: string | null;
@@ -41,6 +44,9 @@ export function mapInspectionAppointment(
     status: row.status,
     appointmentDate: row.appointmentDate,
     appointmentTime: row.appointmentTime,
+    proposedAppointmentDate: row.proposedAppointmentDate,
+    proposedAppointmentTime: row.proposedAppointmentTime,
+    rescheduleInitiatedBy: row.rescheduleInitiatedBy,
     reason: row.reason,
     proofOriginalName: row.proofOriginalName,
     workshopNotes: row.workshopNotes,

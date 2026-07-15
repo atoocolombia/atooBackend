@@ -9,6 +9,10 @@ import { buildUserDisplayName } from "../lib/userProfile.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { prisma } from "../lib/prisma.js";
 import { resolveStoredFile } from "../lib/uploadStorage.js";
+import {
+  createUserNotification,
+  formatAppointmentWhen,
+} from "../lib/userNotifications.js";
 
 export const workshopPortalRouter = Router({ mergeParams: true });
 
@@ -45,9 +49,16 @@ workshopPortalRouter.get("/summary", async (req, res, next) => {
     }
 
     const { workshop } = ctx;
-    const [pendingCount, todayCount, upcomingSlots] = await Promise.all([
+    const [pendingCount, clientCounterCount, todayCount, upcomingSlots] = await Promise.all([
       prisma.inspectionAppointment.count({
         where: { workshopId: workshop.id, status: InspectionAppointmentStatus.PENDING },
+      }),
+      prisma.inspectionAppointment.count({
+        where: {
+          workshopId: workshop.id,
+          status: InspectionAppointmentStatus.RESCHEDULE_PENDING,
+          rescheduleInitiatedBy: "CLIENT",
+        },
       }),
       prisma.inspectionAppointment.count({
         where: {
@@ -72,7 +83,7 @@ workshopPortalRouter.get("/summary", async (req, res, next) => {
         city: workshop.city,
         phone: workshop.phone,
       },
-      pendingRequests: pendingCount,
+      pendingRequests: pendingCount + clientCounterCount,
       appointmentsToday: todayCount,
       upcomingAvailabilityDays: upcomingSlots,
     });
@@ -147,11 +158,26 @@ workshopPortalRouter.patch("/appointments/:appointmentId", async (req, res, next
       return;
     }
 
+    const applyClientProposal =
+      status === InspectionAppointmentStatus.CONFIRMED &&
+      existing.status === InspectionAppointmentStatus.RESCHEDULE_PENDING &&
+      existing.rescheduleInitiatedBy === "CLIENT" &&
+      existing.proposedAppointmentDate;
+
     const updated = await prisma.inspectionAppointment.update({
       where: { id: appointmentId },
       data: {
         status,
         workshopNotes: typeof workshopNotes === "string" ? workshopNotes.trim() || null : undefined,
+        ...(applyClientProposal
+          ? {
+              appointmentDate: existing.proposedAppointmentDate!,
+              appointmentTime: existing.proposedAppointmentTime,
+              proposedAppointmentDate: null,
+              proposedAppointmentTime: null,
+              rescheduleInitiatedBy: null,
+            }
+          : {}),
       },
       include: {
         workshop: { select: { name: true, address: true, city: true } },
@@ -161,6 +187,131 @@ workshopPortalRouter.patch("/appointments/:appointmentId", async (req, res, next
             identityExtraction: { select: { firstName: true, lastName: true } },
           },
         },
+      },
+    });
+
+    if (applyClientProposal) {
+      await createUserNotification({
+        userId: existing.userId,
+        type: "reschedule_accepted",
+        title: "Nueva fecha confirmada",
+        message: `${ctx.workshop.name} aceptó tu propuesta. Tu cita quedó para el ${formatAppointmentWhen(existing.proposedAppointmentDate!, existing.proposedAppointmentTime)}.`,
+        metadata: { appointmentId: existing.id },
+      });
+    }
+
+    res.json(
+      mapInspectionAppointment({
+        ...updated,
+        user: {
+          email: updated.user.email,
+          identityExtraction: updated.user.identityExtraction,
+        },
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+workshopPortalRouter.post("/appointments/:appointmentId/reschedule", async (req, res, next) => {
+  try {
+    const ctx = await loadWorkshopForUser(paramUserId(req));
+    if (!ctx) {
+      res.status(404).json({ error: "Taller no encontrado para este usuario" });
+      return;
+    }
+
+    const appointmentId = String(req.params.appointmentId ?? "");
+    const { appointmentDate, appointmentTime, note } = req.body as {
+      appointmentDate?: string;
+      appointmentTime?: string;
+      note?: string;
+    };
+
+    const newDate = appointmentDate?.trim();
+    const newTime = appointmentTime?.trim() || null;
+
+    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+      res.status(400).json({ error: "Fecha inválida (usa YYYY-MM-DD)" });
+      return;
+    }
+    if (!newTime) {
+      res.status(400).json({ error: "Horario obligatorio" });
+      return;
+    }
+
+    const existing = await prisma.inspectionAppointment.findFirst({
+      where: { id: appointmentId, workshopId: ctx.workshop.id },
+      include: {
+        workshop: { select: { name: true, address: true, city: true } },
+        user: {
+          select: {
+            email: true,
+            identityExtraction: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Cita no encontrada" });
+      return;
+    }
+
+    if (
+      existing.status !== InspectionAppointmentStatus.PENDING &&
+      existing.status !== InspectionAppointmentStatus.CONFIRMED &&
+      existing.status !== InspectionAppointmentStatus.RESCHEDULE_PENDING
+    ) {
+      res.status(400).json({ error: "Esta cita no se puede reagendar" });
+      return;
+    }
+
+    const slot = await prisma.workshopAvailabilitySlot.findFirst({
+      where: {
+        workshopId: ctx.workshop.id,
+        date: newDate,
+        startTime: newTime,
+      },
+    });
+    if (!slot || slot.bookedCount >= slot.maxAppointments) {
+      res.status(400).json({ error: "No hay cupo disponible en esa fecha y horario" });
+      return;
+    }
+
+    const updated = await prisma.inspectionAppointment.update({
+      where: { id: appointmentId },
+      data: {
+        status: InspectionAppointmentStatus.RESCHEDULE_PENDING,
+        proposedAppointmentDate: newDate,
+        proposedAppointmentTime: newTime,
+        rescheduleInitiatedBy: "WORKSHOP",
+        workshopNotes: typeof note === "string" ? note.trim() || existing.workshopNotes : existing.workshopNotes,
+      },
+      include: {
+        workshop: { select: { name: true, address: true, city: true } },
+        user: {
+          select: {
+            email: true,
+            identityExtraction: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+
+    await createUserNotification({
+      userId: existing.userId,
+      type: "reschedule_proposed",
+      title: "Propuesta de nueva fecha de revisión",
+      message: `${ctx.workshop.name} propone reagendar tu cita al ${formatAppointmentWhen(newDate, newTime)}. Revisa y confirma o elige otra fecha.`,
+      metadata: {
+        appointmentId: existing.id,
+        workshopName: ctx.workshop.name,
+        previousDate: existing.appointmentDate,
+        previousTime: existing.appointmentTime,
+        proposedDate: newDate,
+        proposedTime: newTime,
       },
     });
 
@@ -349,7 +500,13 @@ workshopPortalRouter.get("/notifications", async (req, res, next) => {
     const pending = await prisma.inspectionAppointment.findMany({
       where: {
         workshopId: ctx.workshop.id,
-        status: InspectionAppointmentStatus.PENDING,
+        OR: [
+          { status: InspectionAppointmentStatus.PENDING },
+          {
+            status: InspectionAppointmentStatus.RESCHEDULE_PENDING,
+            rescheduleInitiatedBy: "CLIENT",
+          },
+        ],
       },
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -373,12 +530,22 @@ workshopPortalRouter.get("/notifications", async (req, res, next) => {
         );
         return {
           id: row.id,
-          type: row.kind === "BUSINESS_PLANNED" ? "planned" : "request",
+          type:
+            row.status === InspectionAppointmentStatus.RESCHEDULE_PENDING
+              ? "reschedule_counter"
+              : row.kind === "BUSINESS_PLANNED"
+                ? "planned"
+                : "request",
           title:
-            row.kind === "BUSINESS_PLANNED"
-              ? "Cita planificada por atoo"
-              : "Nueva solicitud de cliente",
-          message: `${displayName} — ${row.appointmentDate} ${row.appointmentTime ?? ""}`.trim(),
+            row.status === InspectionAppointmentStatus.RESCHEDULE_PENDING
+              ? "Cliente propuso otra fecha"
+              : row.kind === "BUSINESS_PLANNED"
+                ? "Cita planificada por atoo"
+                : "Nueva solicitud de cliente",
+          message:
+            row.status === InspectionAppointmentStatus.RESCHEDULE_PENDING
+              ? `${displayName} propone ${row.proposedAppointmentDate ?? row.appointmentDate} ${row.proposedAppointmentTime ?? row.appointmentTime ?? ""}`.trim()
+              : `${displayName} — ${row.appointmentDate} ${row.appointmentTime ?? ""}`.trim(),
           createdAt: row.createdAt.toISOString(),
           read: false,
         };

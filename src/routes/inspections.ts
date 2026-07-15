@@ -11,6 +11,10 @@ import {
 } from "../lib/inspectionAppointmentMapper.js";
 import { prisma } from "../lib/prisma.js";
 import { UPLOAD_ROOT, resolveStoredFile } from "../lib/uploadStorage.js";
+import {
+  createUserNotification,
+  formatAppointmentWhen,
+} from "../lib/userNotifications.js";
 
 export const inspectionsRouter = Router({ mergeParams: true });
 
@@ -315,6 +319,160 @@ inspectionsRouter.get("/appointments/:appointmentId/proof", async (req, res, nex
 
     const filePath = resolveStoredFile(appointment.proofStoredPath);
     res.sendFile(filePath);
+  } catch (err) {
+    next(err);
+  }
+});
+
+inspectionsRouter.get("/notifications", async (req, res, next) => {
+  try {
+    const userId = paramUserId(req);
+    const user = await requireClientUser(userId);
+    if (!user) {
+      res.status(404).json({ error: "Usuario no encontrado" });
+      return;
+    }
+
+    const rows = await prisma.userNotification.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    });
+
+    res.json(
+      rows.map((n) => ({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        metadata: n.metadata,
+        read: n.read,
+        createdAt: n.createdAt.toISOString(),
+      })),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+inspectionsRouter.patch("/notifications/:notificationId/read", async (req, res, next) => {
+  try {
+    const userId = paramUserId(req);
+    const notificationId = String(req.params.notificationId ?? "");
+
+    const updated = await prisma.userNotification.updateMany({
+      where: { id: notificationId, userId },
+      data: { read: true },
+    });
+    if (updated.count === 0) {
+      res.status(404).json({ error: "Notificación no encontrada" });
+      return;
+    }
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+inspectionsRouter.patch("/appointments/:appointmentId/reschedule-response", async (req, res, next) => {
+  try {
+    const userId = paramUserId(req);
+    const appointmentId = String(req.params.appointmentId ?? "");
+    const { action, appointmentDate, appointmentTime } = req.body as {
+      action?: "accept" | "counter";
+      appointmentDate?: string;
+      appointmentTime?: string;
+    };
+
+    const existing = await prisma.inspectionAppointment.findFirst({
+      where: { id: appointmentId, userId },
+      include: { workshop: { select: { name: true, address: true, city: true } } },
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Cita no encontrada" });
+      return;
+    }
+
+    if (existing.status !== InspectionAppointmentStatus.RESCHEDULE_PENDING) {
+      res.status(400).json({ error: "No hay un reagendamiento pendiente de confirmar" });
+      return;
+    }
+
+    if (action === "accept") {
+      const newDate = existing.proposedAppointmentDate ?? existing.appointmentDate;
+      const newTime = existing.proposedAppointmentTime ?? existing.appointmentTime;
+
+      const updated = await prisma.inspectionAppointment.update({
+        where: { id: appointmentId },
+        data: {
+          status: InspectionAppointmentStatus.CONFIRMED,
+          appointmentDate: newDate,
+          appointmentTime: newTime,
+          proposedAppointmentDate: null,
+          proposedAppointmentTime: null,
+          rescheduleInitiatedBy: null,
+        },
+        include: { workshop: { select: { name: true, address: true, city: true } } },
+      });
+
+      await prisma.userNotification.updateMany({
+        where: {
+          userId,
+          type: "reschedule_proposed",
+        },
+        data: { read: true },
+      });
+
+      res.json(mapInspectionAppointment(updated));
+      return;
+    }
+
+    if (action === "counter") {
+      const newDate = appointmentDate?.trim();
+      const newTime = appointmentTime?.trim() || null;
+
+      if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate) || !newTime) {
+        res.status(400).json({ error: "Indica fecha y horario alternativos" });
+        return;
+      }
+
+      const slot = await prisma.workshopAvailabilitySlot.findFirst({
+        where: {
+          workshopId: existing.workshopId,
+          date: newDate,
+          startTime: newTime,
+        },
+      });
+      if (!slot || slot.bookedCount >= slot.maxAppointments) {
+        res.status(400).json({ error: "El taller no tiene cupo en esa fecha y horario" });
+        return;
+      }
+
+      const updated = await prisma.inspectionAppointment.update({
+        where: { id: appointmentId },
+        data: {
+          status: InspectionAppointmentStatus.RESCHEDULE_PENDING,
+          proposedAppointmentDate: newDate,
+          proposedAppointmentTime: newTime,
+          rescheduleInitiatedBy: "CLIENT",
+        },
+        include: { workshop: { select: { name: true, address: true, city: true } } },
+      });
+
+      await createUserNotification({
+        userId,
+        type: "reschedule_counter_sent",
+        title: "Propuesta enviada al taller",
+        message: `Enviaste una contra-propuesta para el ${formatAppointmentWhen(newDate, newTime)}. El taller la revisará.`,
+        metadata: { appointmentId: existing.id },
+      });
+
+      res.json(mapInspectionAppointment(updated));
+      return;
+    }
+
+    res.status(400).json({ error: "Acción inválida. Usa accept o counter." });
   } catch (err) {
     next(err);
   }
