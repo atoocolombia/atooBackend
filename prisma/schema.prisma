@@ -187,10 +187,23 @@ enum InspectionAppointmentKind {
 enum InspectionAppointmentStatus {
   PENDING
   CONFIRMED
+  IN_PROGRESS
   REJECTED
   COMPLETED
   CANCELLED
   RESCHEDULE_PENDING
+}
+
+enum InspectionSessionStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ProcedureSuggestionStatus {
+  PENDING_ADMIN
+  APPROVED_IMMEDIATE
+  APPROVED_CLIENT_SCHEDULE
+  REJECTED
 }
 
 /// Taller asociado a atoo; el usuario WORKSHOP gestiona disponibilidad y citas.
@@ -260,12 +273,65 @@ model InspectionAppointment {
   proofOriginalName String?
   proofSizeBytes    Int?
   workshopNotes     String?
+  session           InspectionSession?
   createdAt         DateTime                    @default(now())
   updatedAt         DateTime                    @updatedAt
 
   @@index([userId])
   @@index([workshopId, appointmentDate])
   @@index([workshopId, status])
+}
+
+/// Sesión de revisión iniciada por el taller durante la cita.
+model InspectionSession {
+  id            String                  @id
+  appointmentId String                  @unique
+  appointment   InspectionAppointment   @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  status        InspectionSessionStatus @default(IN_PROGRESS)
+  startedAt     DateTime                @default(now())
+  completedAt   DateTime?
+  notes         String?
+  checklistItems InspectionChecklistItem[]
+  suggestions   InspectionProcedureSuggestion[]
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+}
+
+/// Pasos estándar (y adicionales autorizados) de la revisión.
+model InspectionChecklistItem {
+  id          String            @id
+  sessionId   String
+  session     InspectionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  sortOrder   Int               @default(0)
+  completed   Boolean           @default(false)
+  completedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([sessionId])
+}
+
+/// Procedimientos adicionales sugeridos por el taller; requieren autorización del admin.
+model InspectionProcedureSuggestion {
+  id               String                    @id
+  sessionId        String
+  session          InspectionSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  title            String
+  description      String?
+  estimatedCostCop Int?
+  isUrgent         Boolean                   @default(false)
+  status           ProcedureSuggestionStatus @default(PENDING_ADMIN)
+  adminNotes       String?
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+  deadlineAt       DateTime?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  @@index([sessionId])
+  @@index([status])
 }
 
 /// Notificaciones in-app para clientes (reagendamientos, confirmaciones, etc.).

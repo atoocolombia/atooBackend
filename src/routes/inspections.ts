@@ -183,6 +183,57 @@ inspectionsRouter.get("/appointments", async (req, res, next) => {
   }
 });
 
+inspectionsRouter.get("/procedure-actions", async (req, res, next) => {
+  try {
+    const userId = paramUserId(req);
+    const user = await requireClientUser(userId);
+    if (!user) {
+      res.status(404).json({ error: "Usuario no encontrado" });
+      return;
+    }
+
+    const rows = await prisma.inspectionProcedureSuggestion.findMany({
+      where: {
+        session: { appointment: { userId } },
+        status: {
+          in: ["APPROVED_IMMEDIATE", "APPROVED_CLIENT_SCHEDULE", "REJECTED"],
+        },
+      },
+      orderBy: { reviewedAt: "desc" },
+      take: 20,
+      include: {
+        session: {
+          include: {
+            appointment: {
+              include: {
+                workshop: { select: { name: true, city: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    res.json(
+      rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        estimatedCostCop: row.estimatedCostCop,
+        isUrgent: row.isUrgent,
+        status: row.status,
+        deadlineAt: row.deadlineAt?.toISOString() ?? null,
+        reviewedAt: row.reviewedAt?.toISOString() ?? null,
+        workshopName: row.session.appointment.workshop.name,
+        workshopCity: row.session.appointment.workshop.city,
+        appointmentId: row.session.appointmentId,
+      })),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
 inspectionsRouter.post("/appointments", (req, res, next) => {
   proofUpload.single("proof")(req, res, async (err: unknown) => {
     if (err) {

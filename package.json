@@ -13,7 +13,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "node prisma/seed.mjs",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test:gemini": "node scripts/test-gemini.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

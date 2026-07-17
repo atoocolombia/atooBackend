@@ -5,6 +5,12 @@ import {
   mapAvailabilitySlot,
   mapInspectionAppointment,
 } from "../lib/inspectionAppointmentMapper.js";
+import {
+  createDefaultChecklist,
+  loadSessionByAppointmentId,
+  mapInspectionSession,
+  notifyAllAdmins,
+} from "../lib/inspectionSession.js";
 import { buildUserDisplayName } from "../lib/userProfile.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { prisma } from "../lib/prisma.js";
@@ -347,6 +353,320 @@ workshopPortalRouter.get("/appointments/:appointmentId/proof", async (req, res, 
     }
 
     res.sendFile(resolveStoredFile(appointment.proofStoredPath));
+  } catch (err) {
+    next(err);
+  }
+});
+
+workshopPortalRouter.post("/appointments/:appointmentId/session/start", async (req, res, next) => {
+  try {
+    const ctx = await loadWorkshopForUser(paramUserId(req));
+    if (!ctx) {
+      res.status(404).json({ error: "Taller no encontrado para este usuario" });
+      return;
+    }
+
+    const appointmentId = String(req.params.appointmentId ?? "");
+    const appointment = await prisma.inspectionAppointment.findFirst({
+      where: { id: appointmentId, workshopId: ctx.workshop.id },
+    });
+    if (!appointment) {
+      res.status(404).json({ error: "Cita no encontrada" });
+      return;
+    }
+
+    if (
+      appointment.status !== InspectionAppointmentStatus.CONFIRMED &&
+      appointment.status !== InspectionAppointmentStatus.IN_PROGRESS
+    ) {
+      res.status(400).json({ error: "Solo puedes iniciar la revisión de una cita confirmada" });
+      return;
+    }
+
+    const existingSession = await loadSessionByAppointmentId(appointmentId);
+    if (existingSession) {
+      res.json(mapInspectionSession(existingSession));
+      return;
+    }
+
+    const sessionId = generateMixedId();
+    await prisma.$transaction([
+      prisma.inspectionSession.create({
+        data: {
+          id: sessionId,
+          appointmentId,
+          status: "IN_PROGRESS",
+        },
+      }),
+      prisma.inspectionAppointment.update({
+        where: { id: appointmentId },
+        data: { status: InspectionAppointmentStatus.IN_PROGRESS },
+      }),
+    ]);
+
+    await createDefaultChecklist(sessionId);
+
+    await createUserNotification({
+      userId: appointment.userId,
+      type: "inspection_started",
+      title: "Tu revisión ya comenzó",
+      message: `${ctx.workshop.name} inició la revisión técnico-mecánica de tu vehículo.`,
+      metadata: { appointmentId, sessionId },
+    });
+
+    const session = await loadSessionByAppointmentId(appointmentId);
+    res.status(201).json(mapInspectionSession(session!));
+  } catch (err) {
+    next(err);
+  }
+});
+
+workshopPortalRouter.get("/appointments/:appointmentId/session", async (req, res, next) => {
+  try {
+    const ctx = await loadWorkshopForUser(paramUserId(req));
+    if (!ctx) {
+      res.status(404).json({ error: "Taller no encontrado para este usuario" });
+      return;
+    }
+
+    const appointmentId = String(req.params.appointmentId ?? "");
+    const appointment = await prisma.inspectionAppointment.findFirst({
+      where: { id: appointmentId, workshopId: ctx.workshop.id },
+      select: { id: true },
+    });
+    if (!appointment) {
+      res.status(404).json({ error: "Cita no encontrada" });
+      return;
+    }
+
+    const session = await loadSessionByAppointmentId(appointmentId);
+    if (!session) {
+      res.status(404).json({ error: "La revisión aún no ha iniciado" });
+      return;
+    }
+
+    res.json(mapInspectionSession(session));
+  } catch (err) {
+    next(err);
+  }
+});
+
+workshopPortalRouter.patch(
+  "/appointments/:appointmentId/session/checklist/:itemId",
+  async (req, res, next) => {
+    try {
+      const ctx = await loadWorkshopForUser(paramUserId(req));
+      if (!ctx) {
+        res.status(404).json({ error: "Taller no encontrado para este usuario" });
+        return;
+      }
+
+      const appointmentId = String(req.params.appointmentId ?? "");
+      const itemId = String(req.params.itemId ?? "");
+      const { completed } = req.body as { completed?: boolean };
+
+      if (typeof completed !== "boolean") {
+        res.status(400).json({ error: "Indica completed: true o false" });
+        return;
+      }
+
+      const session = await prisma.inspectionSession.findFirst({
+        where: {
+          appointmentId,
+          appointment: { workshopId: ctx.workshop.id },
+        },
+      });
+      if (!session) {
+        res.status(404).json({ error: "Sesión no encontrada" });
+        return;
+      }
+      if (session.status !== "IN_PROGRESS") {
+        res.status(400).json({ error: "La revisión ya fue cerrada" });
+        return;
+      }
+
+      const updated = await prisma.inspectionChecklistItem.updateMany({
+        where: { id: itemId, sessionId: session.id },
+        data: {
+          completed,
+          completedAt: completed ? new Date() : null,
+        },
+      });
+      if (updated.count === 0) {
+        res.status(404).json({ error: "Paso no encontrado" });
+        return;
+      }
+
+      const fresh = await loadSessionByAppointmentId(appointmentId);
+      res.json(mapInspectionSession(fresh!));
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+workshopPortalRouter.post(
+  "/appointments/:appointmentId/session/suggestions",
+  async (req, res, next) => {
+    try {
+      const ctx = await loadWorkshopForUser(paramUserId(req));
+      if (!ctx) {
+        res.status(404).json({ error: "Taller no encontrado para este usuario" });
+        return;
+      }
+
+      const appointmentId = String(req.params.appointmentId ?? "");
+      const { title, description, estimatedCostCop, isUrgent } = req.body as {
+        title?: string;
+        description?: string;
+        estimatedCostCop?: number | null;
+        isUrgent?: boolean;
+      };
+
+      const cleanTitle = title?.trim() ?? "";
+      if (!cleanTitle) {
+        res.status(400).json({ error: "El título del procedimiento es obligatorio" });
+        return;
+      }
+
+      const session = await prisma.inspectionSession.findFirst({
+        where: {
+          appointmentId,
+          appointment: { workshopId: ctx.workshop.id },
+        },
+        include: {
+          appointment: {
+            include: {
+              user: {
+                select: {
+                  email: true,
+                  identityExtraction: { select: { firstName: true, lastName: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!session) {
+        res.status(404).json({ error: "Sesión no encontrada" });
+        return;
+      }
+      if (session.status !== "IN_PROGRESS") {
+        res.status(400).json({ error: "La revisión ya fue cerrada" });
+        return;
+      }
+
+      const cost =
+        estimatedCostCop == null || estimatedCostCop === undefined
+          ? null
+          : Number(estimatedCostCop);
+      if (cost != null && (!Number.isFinite(cost) || cost < 0)) {
+        res.status(400).json({ error: "Costo inválido" });
+        return;
+      }
+
+      const suggestion = await prisma.inspectionProcedureSuggestion.create({
+        data: {
+          id: generateMixedId(),
+          sessionId: session.id,
+          title: cleanTitle,
+          description: description?.trim() || null,
+          estimatedCostCop: cost,
+          isUrgent: Boolean(isUrgent),
+        },
+      });
+
+      const clientName = buildUserDisplayName(
+        session.appointment.user.email,
+        session.appointment.user.identityExtraction?.firstName,
+        session.appointment.user.identityExtraction?.lastName,
+      );
+
+      await notifyAllAdmins({
+        type: "procedure_authorization",
+        title: "Autorización de procedimiento requerida",
+        message: `${ctx.workshop.name} sugiere "${cleanTitle}" para ${clientName}. Revisa y autoriza o rechaza.`,
+        metadata: {
+          suggestionId: suggestion.id,
+          sessionId: session.id,
+          appointmentId,
+          workshopName: ctx.workshop.name,
+          title: cleanTitle,
+          estimatedCostCop: cost,
+          isUrgent: Boolean(isUrgent),
+        },
+      });
+
+      const fresh = await loadSessionByAppointmentId(appointmentId);
+      res.status(201).json(mapInspectionSession(fresh!));
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+workshopPortalRouter.post("/appointments/:appointmentId/session/complete", async (req, res, next) => {
+  try {
+    const ctx = await loadWorkshopForUser(paramUserId(req));
+    if (!ctx) {
+      res.status(404).json({ error: "Taller no encontrado para este usuario" });
+      return;
+    }
+
+    const appointmentId = String(req.params.appointmentId ?? "");
+    const { notes } = req.body as { notes?: string };
+
+    const session = await prisma.inspectionSession.findFirst({
+      where: {
+        appointmentId,
+        appointment: { workshopId: ctx.workshop.id },
+      },
+      include: { appointment: true, checklistItems: true },
+    });
+    if (!session) {
+      res.status(404).json({ error: "Sesión no encontrada" });
+      return;
+    }
+    if (session.status !== "IN_PROGRESS") {
+      res.status(400).json({ error: "La revisión ya fue cerrada" });
+      return;
+    }
+
+    const pendingSuggestions = await prisma.inspectionProcedureSuggestion.count({
+      where: { sessionId: session.id, status: "PENDING_ADMIN" },
+    });
+    if (pendingSuggestions > 0) {
+      res.status(400).json({
+        error: "Hay procedimientos pendientes de autorización del administrador",
+      });
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.inspectionSession.update({
+        where: { id: session.id },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date(),
+          notes: typeof notes === "string" ? notes.trim() || null : session.notes,
+        },
+      }),
+      prisma.inspectionAppointment.update({
+        where: { id: appointmentId },
+        data: { status: InspectionAppointmentStatus.COMPLETED },
+      }),
+    ]);
+
+    await createUserNotification({
+      userId: session.appointment.userId,
+      type: "inspection_completed",
+      title: "Revisión completada",
+      message: `${ctx.workshop.name} finalizó la revisión técnico-mecánica de tu vehículo.`,
+      metadata: { appointmentId, sessionId: session.id },
+    });
+
+    const fresh = await loadSessionByAppointmentId(appointmentId);
+    res.json(mapInspectionSession(fresh!));
   } catch (err) {
     next(err);
   }
