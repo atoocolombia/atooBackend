@@ -16,12 +16,15 @@ export type GeminiCallFailureKind =
   | "unknown";
 
 export function classifyGeminiError(message: string): GeminiCallFailureKind {
-  if (/leaked|API key|401|403|PERMISSION_DENIED|UNAUTHENTICATED/i.test(message)) return "auth";
-  if (/FAILED_PRECONDITION|not available in your country|enable billing|billing/i.test(message)) {
-    return "billing";
+  if (/leaked|API_KEY_INVALID|API key not valid|API key|401|403|PERMISSION_DENIED|UNAUTHENTICATED/i.test(message)) {
+    return "auth";
   }
-  if (/429|Too Many Requests|quota exceeded|Quota exceeded|RESOURCE_EXHAUSTED/i.test(message)) {
+  // Check quota before billing: Google's 429 text often mentions "billing details".
+  if (/429|Too Many Requests|quota exceeded|Quota exceeded|RESOURCE_EXHAUSTED|rate-limit|rate limits/i.test(message)) {
     return "quota";
+  }
+  if (/FAILED_PRECONDITION|not available in your country|enable billing/i.test(message)) {
+    return "billing";
   }
   if (/404|not found|not supported for generateContent|is not found for API version/i.test(message)) {
     return "model";
