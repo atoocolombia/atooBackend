@@ -1,5 +1,11 @@
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
-import { extractJsonObjectFromModelText, generateContentWithModelChain, type GeminiContentPart } from "./geminiChainedContent.js";
+import {
+  classifyGeminiError,
+  extractJsonObjectFromModelText,
+  generateContentWithModelChain,
+  userMessageForGeminiFailure,
+  type GeminiContentPart,
+} from "./geminiChainedContent.js";
 
 const LOG_PREFIX = "[work-address-docs-ai]";
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -301,11 +307,9 @@ export async function verifyPlatformWorkCapture(
     return { ok: false, message: hint ?? USER.platformGeneric };
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
-    logDiagnostic("verifyPlatformWorkCapture fallo", raw);
-    if (/429|quota|RESOURCE_EXHAUSTED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    if (/404|not supported for generateContent/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    if (/API key|401|PERMISSION_DENIED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    return { ok: false, message: USER.aiUnavailable };
+    const kind = classifyGeminiError(raw);
+    logDiagnostic(`verifyPlatformWorkCapture fallo (${kind})`, raw);
+    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
   }
 }
 
@@ -365,11 +369,9 @@ export async function verifyBankDocumentAgainstIdentity(
     return { ok: false, message: hint ?? USER.bankGeneric };
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
-    logDiagnostic("verifyBankDocumentAgainstIdentity fallo", raw);
-    if (/429|quota|RESOURCE_EXHAUSTED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    if (/404|not supported for generateContent/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    if (/API key|401|PERMISSION_DENIED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    return { ok: false, message: USER.aiUnavailable };
+    const kind = classifyGeminiError(raw);
+    logDiagnostic(`Gemini fallo (${kind})`, raw);
+    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
   }
 }
 
@@ -420,11 +422,9 @@ export async function verifyUtilityReceiptAddress(
     return { ok: false, message: hint ?? USER.utilityGeneric };
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
-    logDiagnostic("verifyUtilityReceiptAddress fallo", raw);
-    if (/429|quota|RESOURCE_EXHAUSTED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    if (/404|not supported for generateContent/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    if (/API key|401|PERMISSION_DENIED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    return { ok: false, message: USER.aiUnavailable };
+    const kind = classifyGeminiError(raw);
+    logDiagnostic(`verifyUtilityReceiptAddress fallo (${kind})`, raw);
+    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
   }
 }
 
@@ -480,10 +480,8 @@ export async function verifyCreditReportAgainstIdentity(
     return { ok: false, message: hint ?? USER.creditGeneric };
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
-    logDiagnostic("verifyCreditReportAgainstIdentity fallo", raw);
-    if (/429|quota|RESOURCE_EXHAUSTED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    if (/404|not supported for generateContent/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    if (/API key|401|PERMISSION_DENIED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    return { ok: false, message: USER.aiUnavailable };
+    const kind = classifyGeminiError(raw);
+    logDiagnostic(`verifyCreditReportAgainstIdentity fallo (${kind})`, raw);
+    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
   }
 }

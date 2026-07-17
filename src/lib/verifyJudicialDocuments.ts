@@ -1,5 +1,11 @@
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
-import { extractJsonObjectFromModelText, generateContentWithModelChain, type GeminiContentPart } from "./geminiChainedContent.js";
+import {
+  classifyGeminiError,
+  extractJsonObjectFromModelText,
+  generateContentWithModelChain,
+  userMessageForGeminiFailure,
+  type GeminiContentPart,
+} from "./geminiChainedContent.js";
 
 const LOG_PREFIX = "[judicial-docs-ai]";
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -262,10 +268,8 @@ export async function verifyJudicialDocument(
     return { ok: false, message: USER.simitGeneric };
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
-    logDiagnostic("verifyJudicialDocument fallo", { documentKind, raw });
-    if (/429|quota|RESOURCE_EXHAUSTED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    if (/404|not supported for generateContent/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    if (/API key|401|PERMISSION_DENIED/i.test(raw)) return { ok: false, message: USER.aiUnavailable };
-    return { ok: false, message: USER.aiUnavailable };
+    const kind = classifyGeminiError(raw);
+    logDiagnostic(`verifyJudicialDocument fallo (${kind})`, { documentKind, raw });
+    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
   }
 }

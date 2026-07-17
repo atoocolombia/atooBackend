@@ -1,5 +1,11 @@
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
-import { extractJsonObjectFromModelText, generateContentWithModelChain, type GeminiContentPart } from "./geminiChainedContent.js";
+import {
+  classifyGeminiError,
+  extractJsonObjectFromModelText,
+  generateContentWithModelChain,
+  userMessageForGeminiFailure,
+  type GeminiContentPart,
+} from "./geminiChainedContent.js";
 
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 
@@ -105,18 +111,8 @@ export async function verifyDataTreatmentSignedPdf(pdfBuffer: Buffer): Promise<D
     return { ok: false, message: USER.aiRejectedDoc };
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
-    logDiagnostic("Fallo definitivo tras probar todos los modelos.", { message: raw, err });
-
-    if (/429|Too Many Requests|quota exceeded|Quota exceeded|RESOURCE_EXHAUSTED/i.test(raw)) {
-      return { ok: false, message: USER.aiUnavailable };
-    }
-    if (/404|not found|not supported for generateContent|is not found/i.test(raw)) {
-      return { ok: false, message: USER.aiUnavailable };
-    }
-    if (/API key|API_KEY_INVALID|401|PERMISSION_DENIED/i.test(raw)) {
-      logDiagnostic("Revisa GEMINI_API_KEY en backend/.env (AI Studio).");
-      return { ok: false, message: USER.aiUnavailable };
-    }
-    return { ok: false, message: USER.aiUnavailable };
+    const kind = classifyGeminiError(raw);
+    logDiagnostic(`Fallo definitivo tras probar todos los modelos (${kind}).`, { message: raw, err });
+    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
   }
 }

@@ -11,6 +11,7 @@ import { usersRouter } from "./routes/users.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
 import { workshopPortalRouter } from "./routes/workshopPortal.js";
 import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
+import { pingGemini } from "./lib/geminiChainedContent.js";
 
 const app = express();
 
@@ -86,8 +87,39 @@ app.get("/health/ai", (_req, res) => {
         ? "DATA_TREATMENT_SKIP_AI_VERIFY=true desactiva la IA."
         : configuredModel && DEPRECATED_GEMINI_MODELS.has(configuredModel)
           ? `Cambia GEMINI_MODEL a gemini-2.5-flash (el valor "${configuredModel}" ya no existe).`
-          : "Configuración básica OK. Si falla al subir, revisa cuota de Gemini en Google AI Studio.",
+          : "Configuración básica OK. Usa GET /health/ai/ping para probar una llamada real a Gemini.",
   });
+});
+
+/** Llama a Gemini de verdad (texto corto) para diagnosticar cuota/clave/red. */
+app.get("/health/ai/ping", async (_req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const skipAi = process.env.DATA_TREATMENT_SKIP_AI_VERIFY === "true";
+
+  if (!apiKey) {
+    res.status(503).json({
+      ok: false,
+      kind: "auth",
+      detail: "Falta GEMINI_API_KEY",
+    });
+    return;
+  }
+  if (skipAi) {
+    res.status(200).json({
+      ok: false,
+      kind: "skipped",
+      detail: "DATA_TREATMENT_SKIP_AI_VERIFY=true",
+    });
+    return;
+  }
+
+  try {
+    const result = await pingGemini(apiKey);
+    res.status(result.ok ? 200 : 503).json(result);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    res.status(503).json({ ok: false, kind: "unknown", detail: detail.slice(0, 280) });
+  }
 });
 
 app.get("/api/v1", (_req, res) => {

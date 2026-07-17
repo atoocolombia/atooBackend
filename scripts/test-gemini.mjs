@@ -2,14 +2,12 @@
  * Prueba rápida de Gemini con la clave de backend/.env
  *
  * Uso:
- *   cd backend && node scripts/test-gemini.mjs
- *
- * No imprime la API key. Solo indica si la llamada funciona.
+ *   cd backend && npm run test:gemini
  */
 import { config } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../.env") });
@@ -54,24 +52,26 @@ if (!apiKey) {
   process.exit(1);
 }
 
-if (skip) {
-  console.warn("\nSKIP activo: la app no llamará a Gemini en uploads.");
-}
-
 const chain = resolveChain();
 console.log(`Cadena: ${chain.join(" → ")}`);
 
-const genAI = new GoogleGenerativeAI(apiKey);
+const ai = new GoogleGenAI({ apiKey });
 let ok = false;
 
 for (const modelName of chain) {
   process.stdout.write(`Probando ${modelName}… `);
   try {
-    const model = genAI.getGenerativeModel({ model: modelName });
-    const result = await model.generateContent(
-      'Responde solo con el JSON {"ok":true} sin markdown.',
-    );
-    const text = result.response.text().trim();
+    const supportsThinking = /gemini-2\.5|gemini-3/i.test(modelName);
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: 'Responde solo con el JSON {"ok":true} sin markdown.',
+      config: {
+        ...(supportsThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+        temperature: 0.1,
+        maxOutputTokens: 64,
+      },
+    });
+    const text = (response.text ?? "").trim();
     console.log(`OK → ${text.slice(0, 60)}`);
     ok = true;
     break;
@@ -83,11 +83,8 @@ for (const modelName of chain) {
 }
 
 if (!ok) {
-  console.error("\nNingún modelo respondió. Revisa:");
-  console.error("  1) Que la clave sea de AI Studio (https://aistudio.google.com/apikey)");
-  console.error("  2) Que GEMINI_MODEL no sea gemini-1.5-* (obsoleto)");
-  console.error("  3) Cuota / facturación en Google AI Studio");
+  console.error("\nNingún modelo respondió. Revisa clave, cuota y facturación en AI Studio.");
   process.exit(1);
 }
 
-console.log("\nGemini OK. Puedes subir un documento en la solicitud y debería validarse con IA.");
+console.log("\nGemini OK.");
