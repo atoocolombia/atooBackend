@@ -9,12 +9,22 @@ import {
   mapAvailabilitySlot,
   mapInspectionAppointment,
 } from "../lib/inspectionAppointmentMapper.js";
+import { listClientInspectionHistory } from "../lib/inspectionHistory.js";
+import { ensureInspectionReminders } from "../lib/inspectionReminders.js";
+import {
+  loadSessionByAppointmentId,
+  mapInspectionSession,
+} from "../lib/inspectionSession.js";
 import { prisma } from "../lib/prisma.js";
 import { UPLOAD_ROOT, resolveStoredFile } from "../lib/uploadStorage.js";
 import {
   createUserNotification,
   formatAppointmentWhen,
 } from "../lib/userNotifications.js";
+import {
+  allowsOpenBooking,
+  isValidAppointmentTime,
+} from "../lib/workshopBookingPolicy.js";
 
 export const inspectionsRouter = Router({ mergeParams: true });
 
@@ -76,6 +86,7 @@ inspectionsRouter.get("/vehicle-plan", async (req, res, next) => {
       return;
     }
 
+    await ensureInspectionReminders(userId);
     const plan = await prisma.clientVehiclePlan.findUnique({ where: { userId } });
     if (!plan) {
       res.json(null);
@@ -125,6 +136,7 @@ inspectionsRouter.get("/workshops", async (req, res, next) => {
         phone: w.phone,
         latitude: w.latitude,
         longitude: w.longitude,
+        openBooking: allowsOpenBooking(w.id),
         upcomingSlots: w.slots.map(mapAvailabilitySlot),
       })),
     );
@@ -178,6 +190,104 @@ inspectionsRouter.get("/appointments", async (req, res, next) => {
     });
 
     res.json(rows.map(mapInspectionAppointment));
+  } catch (err) {
+    next(err);
+  }
+});
+
+inspectionsRouter.get("/history", async (req, res, next) => {
+  try {
+    const userId = paramUserId(req);
+    const user = await requireClientUser(userId);
+    if (!user) {
+      res.status(404).json({ error: "Usuario no encontrado" });
+      return;
+    }
+    res.json(await listClientInspectionHistory(userId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+inspectionsRouter.get("/appointments/:appointmentId/session", async (req, res, next) => {
+  try {
+    const userId = paramUserId(req);
+    const appointmentId = String(req.params.appointmentId ?? "");
+    const appointment = await prisma.inspectionAppointment.findFirst({
+      where: { id: appointmentId, userId },
+      select: { id: true },
+    });
+    if (!appointment) {
+      res.status(404).json({ error: "Cita no encontrada" });
+      return;
+    }
+
+    const session = await loadSessionByAppointmentId(appointmentId);
+    if (!session) {
+      res.status(404).json({ error: "La revisión aún no ha iniciado" });
+      return;
+    }
+    res.json(mapInspectionSession(session));
+  } catch (err) {
+    next(err);
+  }
+});
+
+inspectionsRouter.post("/appointments/:appointmentId/survey", async (req, res, next) => {
+  try {
+    const userId = paramUserId(req);
+    const appointmentId = String(req.params.appointmentId ?? "");
+    const { rating, comment } = req.body as { rating?: number; comment?: string };
+    const normalizedRating = Number(rating);
+
+    if (!Number.isInteger(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
+      res.status(400).json({ error: "La calificación debe estar entre 1 y 5" });
+      return;
+    }
+
+    const session = await prisma.inspectionSession.findFirst({
+      where: {
+        appointmentId,
+        status: "COMPLETED",
+        appointment: { userId },
+      },
+      include: { survey: true },
+    });
+    if (!session) {
+      res.status(404).json({ error: "Revisión completada no encontrada" });
+      return;
+    }
+    if (session.survey?.status === "SUBMITTED") {
+      res.status(409).json({ error: "Ya calificaste esta revisión" });
+      return;
+    }
+
+    const survey = await prisma.inspectionSurvey.upsert({
+      where: { sessionId: session.id },
+      create: {
+        id: generateMixedId(),
+        sessionId: session.id,
+        userId,
+        status: "SUBMITTED",
+        rating: normalizedRating,
+        comment: comment?.trim().slice(0, 1000) || null,
+        submittedAt: new Date(),
+      },
+      update: {
+        status: "SUBMITTED",
+        rating: normalizedRating,
+        comment: comment?.trim().slice(0, 1000) || null,
+        submittedAt: new Date(),
+      },
+    });
+
+    res.json({
+      id: survey.id,
+      status: survey.status,
+      rating: survey.rating,
+      comment: survey.comment,
+      submittedAt: survey.submittedAt?.toISOString() ?? null,
+    });
   } catch (err) {
     next(err);
   }
@@ -246,7 +356,11 @@ inspectionsRouter.post("/appointments", (req, res, next) => {
       const userId = paramUserId(req);
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, userType: true },
+        select: {
+          id: true,
+          userType: true,
+          vehiclePlan: { select: { vehicleName: true, vin: true } },
+        },
       });
       if (!user) {
         res.status(404).json({ error: "Usuario no encontrado" });
@@ -290,24 +404,32 @@ inspectionsRouter.post("/appointments", (req, res, next) => {
         return;
       }
 
-      const slot = appointmentTime
-        ? await prisma.workshopAvailabilitySlot.findFirst({
-            where: {
-              workshopId,
-              date: appointmentDate,
-              startTime: appointmentTime,
-            },
-          })
-        : await prisma.workshopAvailabilitySlot.findFirst({
-            where: { workshopId, date: appointmentDate },
-            orderBy: { startTime: "asc" },
-          });
+      const openBooking = allowsOpenBooking(workshopId);
+      if (openBooking && !isValidAppointmentTime(appointmentTime)) {
+        res.status(400).json({ error: "Horario inválido (usa HH:MM)" });
+        return;
+      }
 
-      if (!slot) {
+      const slot = openBooking
+        ? null
+        : appointmentTime
+          ? await prisma.workshopAvailabilitySlot.findFirst({
+              where: {
+                workshopId,
+                date: appointmentDate,
+                startTime: appointmentTime,
+              },
+            })
+          : await prisma.workshopAvailabilitySlot.findFirst({
+              where: { workshopId, date: appointmentDate },
+              orderBy: { startTime: "asc" },
+            });
+
+      if (!openBooking && !slot) {
         res.status(400).json({ error: "El taller no tiene disponibilidad en esa fecha y horario" });
         return;
       }
-      if (slot.bookedCount >= slot.maxAppointments) {
+      if (slot && slot.bookedCount >= slot.maxAppointments) {
         res.status(400).json({ error: "No hay cupos disponibles en ese horario" });
         return;
       }
@@ -315,12 +437,14 @@ inspectionsRouter.post("/appointments", (req, res, next) => {
       const relativePath = path.relative(UPLOAD_ROOT, req.file.path).split(path.sep).join("/");
 
       const appointment = await prisma.$transaction(async (tx) => {
-        const updatedSlot = await tx.workshopAvailabilitySlot.update({
-          where: { id: slot.id },
-          data: { bookedCount: { increment: 1 } },
-        });
-        if (updatedSlot.bookedCount > updatedSlot.maxAppointments) {
-          throw new Error("CUPO_LLENO");
+        if (slot) {
+          const updatedSlot = await tx.workshopAvailabilitySlot.update({
+            where: { id: slot.id },
+            data: { bookedCount: { increment: 1 } },
+          });
+          if (updatedSlot.bookedCount > updatedSlot.maxAppointments) {
+            throw new Error("CUPO_LLENO");
+          }
         }
 
         return tx.inspectionAppointment.create({
@@ -331,8 +455,10 @@ inspectionsRouter.post("/appointments", (req, res, next) => {
             kind: "CLIENT_REQUESTED",
             status: InspectionAppointmentStatus.PENDING,
             appointmentDate,
-            appointmentTime: appointmentTime ?? slot.startTime,
+            appointmentTime: appointmentTime ?? slot!.startTime,
             reason,
+            vehicleNameSnapshot: user.vehiclePlan?.vehicleName ?? null,
+            vinSnapshot: user.vehiclePlan?.vin?.trim().toUpperCase() ?? null,
             proofStoredPath: relativePath,
             proofMimeType: req.file!.mimetype,
             proofOriginalName: req.file!.originalname,
@@ -384,6 +510,7 @@ inspectionsRouter.get("/notifications", async (req, res, next) => {
       return;
     }
 
+    await ensureInspectionReminders(userId);
     const rows = await prisma.userNotification.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
@@ -488,16 +615,24 @@ inspectionsRouter.patch("/appointments/:appointmentId/reschedule-response", asyn
         return;
       }
 
-      const slot = await prisma.workshopAvailabilitySlot.findFirst({
-        where: {
-          workshopId: existing.workshopId,
-          date: newDate,
-          startTime: newTime,
-        },
-      });
-      if (!slot || slot.bookedCount >= slot.maxAppointments) {
-        res.status(400).json({ error: "El taller no tiene cupo en esa fecha y horario" });
+      const openBooking = allowsOpenBooking(existing.workshopId);
+      if (openBooking && !isValidAppointmentTime(newTime)) {
+        res.status(400).json({ error: "Horario inválido (usa HH:MM)" });
         return;
+      }
+
+      if (!openBooking) {
+        const slot = await prisma.workshopAvailabilitySlot.findFirst({
+          where: {
+            workshopId: existing.workshopId,
+            date: newDate,
+            startTime: newTime,
+          },
+        });
+        if (!slot || slot.bookedCount >= slot.maxAppointments) {
+          res.status(400).json({ error: "El taller no tiene cupo en esa fecha y horario" });
+          return;
+        }
       }
 
       const updated = await prisma.inspectionAppointment.update({

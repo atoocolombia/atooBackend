@@ -5,6 +5,7 @@ import {
   mapAvailabilitySlot,
   mapInspectionAppointment,
 } from "../lib/inspectionAppointmentMapper.js";
+import { listClientInspectionHistory } from "../lib/inspectionHistory.js";
 import {
   createDefaultChecklist,
   loadSessionByAppointmentId,
@@ -19,6 +20,10 @@ import {
   createUserNotification,
   formatAppointmentWhen,
 } from "../lib/userNotifications.js";
+import {
+  allowsOpenBooking,
+  isValidAppointmentTime,
+} from "../lib/workshopBookingPolicy.js";
 
 export const workshopPortalRouter = Router({ mergeParams: true });
 
@@ -131,6 +136,33 @@ workshopPortalRouter.get("/appointments", async (req, res, next) => {
         }),
       ),
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+workshopPortalRouter.get("/clients/:clientUserId/history", async (req, res, next) => {
+  try {
+    const ctx = await loadWorkshopForUser(paramUserId(req));
+    if (!ctx) {
+      res.status(404).json({ error: "Taller no encontrado para este usuario" });
+      return;
+    }
+
+    const clientUserId = String(req.params.clientUserId ?? "");
+    const relationship = await prisma.inspectionAppointment.findFirst({
+      where: {
+        workshopId: ctx.workshop.id,
+        userId: clientUserId,
+      },
+      select: { id: true },
+    });
+    if (!relationship) {
+      res.status(404).json({ error: "No hay citas de este cliente en el taller" });
+      return;
+    }
+
+    res.json(await listClientInspectionHistory(clientUserId));
   } catch (err) {
     next(err);
   }
@@ -274,16 +306,24 @@ workshopPortalRouter.post("/appointments/:appointmentId/reschedule", async (req,
       return;
     }
 
-    const slot = await prisma.workshopAvailabilitySlot.findFirst({
-      where: {
-        workshopId: ctx.workshop.id,
-        date: newDate,
-        startTime: newTime,
-      },
-    });
-    if (!slot || slot.bookedCount >= slot.maxAppointments) {
-      res.status(400).json({ error: "No hay cupo disponible en esa fecha y horario" });
+    const openBooking = allowsOpenBooking(ctx.workshop.id);
+    if (openBooking && !isValidAppointmentTime(newTime)) {
+      res.status(400).json({ error: "Horario inválido (usa HH:MM)" });
       return;
+    }
+
+    if (!openBooking) {
+      const slot = await prisma.workshopAvailabilitySlot.findFirst({
+        where: {
+          workshopId: ctx.workshop.id,
+          date: newDate,
+          startTime: newTime,
+        },
+      });
+      if (!slot || slot.bookedCount >= slot.maxAppointments) {
+        res.status(400).json({ error: "No hay cupo disponible en esa fecha y horario" });
+        return;
+      }
     }
 
     const updated = await prisma.inspectionAppointment.update({
@@ -655,14 +695,24 @@ workshopPortalRouter.post("/appointments/:appointmentId/session/complete", async
         where: { id: appointmentId },
         data: { status: InspectionAppointmentStatus.COMPLETED },
       }),
+      prisma.inspectionSurvey.upsert({
+        where: { sessionId: session.id },
+        create: {
+          id: generateMixedId(),
+          sessionId: session.id,
+          userId: session.appointment.userId,
+          status: "PENDING",
+        },
+        update: {},
+      }),
     ]);
 
     await createUserNotification({
       userId: session.appointment.userId,
       type: "inspection_completed",
       title: "Revisión completada",
-      message: `${ctx.workshop.name} finalizó la revisión técnico-mecánica de tu vehículo.`,
-      metadata: { appointmentId, sessionId: session.id },
+      message: `${ctx.workshop.name} finalizó la revisión técnico-mecánica de tu vehículo. Cuéntanos cómo fue tu experiencia.`,
+      metadata: { appointmentId, sessionId: session.id, surveyPending: true },
     });
 
     const fresh = await loadSessionByAppointmentId(appointmentId);

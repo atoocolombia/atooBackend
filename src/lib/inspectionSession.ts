@@ -3,6 +3,7 @@ import type {
   InspectionChecklistItem,
   InspectionProcedureSuggestion,
   InspectionSession,
+  InspectionSurvey,
   Workshop,
 } from "@prisma/client";
 import { generateMixedId } from "./generateMixedId.js";
@@ -88,6 +89,7 @@ export async function notifyAllAdmins(input: {
 type SessionWithRelations = InspectionSession & {
   checklistItems: InspectionChecklistItem[];
   suggestions: InspectionProcedureSuggestion[];
+  survey: InspectionSurvey | null;
   appointment: InspectionAppointment & {
     workshop: Pick<Workshop, "name" | "address" | "city">;
     user?: {
@@ -101,6 +103,9 @@ export function mapInspectionSession(session: SessionWithRelations) {
   const firstName = session.appointment.user?.identityExtraction?.firstName?.trim() ?? "";
   const lastName = session.appointment.user?.identityExtraction?.lastName?.trim() ?? "";
   const clientName = `${firstName} ${lastName}`.trim() || session.appointment.user?.email || null;
+  const orderedItems = [...session.checklistItems].sort((a, b) => a.sortOrder - b.sortOrder);
+  const completedSteps = orderedItems.filter((item) => item.completed).length;
+  const totalSteps = orderedItems.length;
 
   return {
     id: session.id,
@@ -113,11 +118,26 @@ export function mapInspectionSession(session: SessionWithRelations) {
     appointmentDate: session.appointment.appointmentDate,
     appointmentTime: session.appointment.appointmentTime,
     workshopName: session.appointment.workshop.name,
+    vehicleName: session.appointment.vehicleNameSnapshot,
+    vin: session.appointment.vinSnapshot,
     clientEmail: session.appointment.user?.email ?? null,
     clientDisplayName: clientName,
-    checklistItems: [...session.checklistItems]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((item) => ({
+    progress: {
+      totalSteps,
+      completedSteps,
+      percent: totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0,
+      currentStepTitle: orderedItems.find((item) => !item.completed)?.title ?? null,
+    },
+    survey: session.survey
+      ? {
+          id: session.survey.id,
+          status: session.survey.status,
+          rating: session.survey.rating,
+          comment: session.survey.comment,
+          submittedAt: session.survey.submittedAt?.toISOString() ?? null,
+        }
+      : null,
+    checklistItems: orderedItems.map((item) => ({
         id: item.id,
         title: item.title,
         description: item.description,
@@ -148,6 +168,7 @@ export async function loadSessionByAppointmentId(appointmentId: string) {
     include: {
       checklistItems: true,
       suggestions: true,
+      survey: true,
       appointment: {
         include: {
           workshop: { select: { name: true, address: true, city: true } },

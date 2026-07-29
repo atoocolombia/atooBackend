@@ -112,6 +112,7 @@ model User {
   inspectionAppointments InspectionAppointment[] @relation("ClientInspectionAppointments")
   managedWorkshop       Workshop?
   notifications         UserNotification[]
+  inspectionSurveys     InspectionSurvey[]
 }
 
 /// Archivos o imágenes subidos por usuario (metadatos en BD; bytes en disco bajo uploads/).
@@ -199,6 +200,11 @@ enum InspectionSessionStatus {
   COMPLETED
 }
 
+enum InspectionSurveyStatus {
+  PENDING
+  SUBMITTED
+}
+
 enum ProcedureSuggestionStatus {
   PENDING_ADMIN
   APPROVED_IMMEDIATE
@@ -273,6 +279,8 @@ model InspectionAppointment {
   proofOriginalName String?
   proofSizeBytes    Int?
   workshopNotes     String?
+  vehicleNameSnapshot String?
+  vinSnapshot         String?
   session           InspectionSession?
   createdAt         DateTime                    @default(now())
   updatedAt         DateTime                    @updatedAt
@@ -293,6 +301,7 @@ model InspectionSession {
   notes         String?
   checklistItems InspectionChecklistItem[]
   suggestions   InspectionProcedureSuggestion[]
+  survey        InspectionSurvey?
   createdAt     DateTime                @default(now())
   updatedAt     DateTime                @updatedAt
 }
@@ -334,6 +343,23 @@ model InspectionProcedureSuggestion {
   @@index([status])
 }
 
+/// Encuesta del cliente al finalizar una revisión.
+model InspectionSurvey {
+  id          String                 @id
+  sessionId   String                 @unique
+  session     InspectionSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      InspectionSurveyStatus @default(PENDING)
+  rating      Int?
+  comment     String?
+  submittedAt DateTime?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@index([userId, status])
+}
+
 /// Notificaciones in-app para clientes (reagendamientos, confirmaciones, etc.).
 model UserNotification {
   id        String   @id
@@ -343,9 +369,11 @@ model UserNotification {
   title     String
   message   String
   metadata  Json?
+  reminderKey String?
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
   @@index([userId, read])
   @@index([userId, createdAt(sort: Desc)])
+  @@unique([userId, reminderKey])
 }

@@ -17,6 +17,8 @@ export type InspectionAppointmentDto = {
   reason: string | null;
   proofOriginalName: string | null;
   workshopNotes: string | null;
+  vehicleName: string | null;
+  vin: string | null;
   createdAt: string;
   updatedAt: string;
   clientEmail?: string;
@@ -50,6 +52,8 @@ export function mapInspectionAppointment(
     reason: row.reason,
     proofOriginalName: row.proofOriginalName,
     workshopNotes: row.workshopNotes,
+    vehicleName: row.vehicleNameSnapshot,
+    vin: row.vinSnapshot,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     clientEmail: row.user?.email,
