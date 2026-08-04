@@ -77,7 +77,7 @@ const CATALOG_VEHICLES = [
     ],
     badge: 'Más Popular',
     popular: true,
-    weeklyPriceCop: 207_000,
+    weeklyPriceCop: 900_000,
     active: true,
     sortOrder: 0,
     specSheetPath: '/vehicles/dongfeng-nammi/ficha-tecnica.pdf',
@@ -103,7 +103,7 @@ const CATALOG_VEHICLES = [
     ],
     badge: null,
     popular: false,
-    weeklyPriceCop: 207_000,
+    weeklyPriceCop: 1_100_000,
     active: true,
     sortOrder: 1,
     specSheetPath: '/vehicles/dongfeng-aeolus-sky-ev01/ficha-tecnica.pdf',
@@ -239,23 +239,22 @@ async function seedCatalog() {
     create: { id: 'default', maxVisibleVehicles: 10, content: DEFAULT_LANDING_CONTENT },
   });
 
+  // Migración puntual del precio por defecto antiguo ($207.000).
+  // No pisa precios personalizados desde el panel admin.
+  await prisma.catalogVehicle.updateMany({
+    where: { slug: 'dongfeng-nammi', weeklyPriceCop: 207_000 },
+    data: { weeklyPriceCop: 900_000 },
+  });
+  await prisma.catalogVehicle.updateMany({
+    where: { slug: 'dongfeng-aeolus-sky-ev01', weeklyPriceCop: 207_000 },
+    data: { weeklyPriceCop: 1_100_000 },
+  });
+
   for (const v of CATALOG_VEHICLES) {
     await prisma.catalogVehicle.upsert({
       where: { slug: v.slug },
-      update: {
-        name: v.name,
-        subtitle: v.subtitle,
-        type: v.type,
-        highlights: v.highlights,
-        features: v.features,
-        specs: v.specs,
-        badge: v.badge,
-        popular: v.popular,
-        weeklyPriceCop: v.weeklyPriceCop,
-        active: v.active,
-        sortOrder: v.sortOrder,
-        specSheetPath: v.specSheetPath,
-      },
+      // No sobrescribir datos editables del admin en cada redeploy/restart.
+      update: {},
       create: {
         id: v.id,
         slug: v.slug,
