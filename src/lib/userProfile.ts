@@ -51,6 +51,7 @@ export type UserProfilePayload = {
 export function mapUserToProfile(user: {
   id: string;
   email: string;
+  phone?: string | null;
   identityExtraction?: {
     firstName: string | null;
     lastName: string | null;
@@ -73,6 +74,6 @@ export function mapUserToProfile(user: {
     initials: buildUserInitials(displayName, user.email),
     address: user.workAddressExtraction?.utilityServiceAddress?.trim() ?? "",
     idDocumentNumber: user.identityExtraction?.idDocumentNumber?.trim() ?? "",
-    phone: "",
+    phone: user.phone?.trim() ?? "",
   };
 }

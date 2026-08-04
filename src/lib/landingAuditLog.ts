@@ -3,13 +3,10 @@ import type { Prisma } from "@prisma/client";
 import { generateMixedId } from "./generateMixedId.js";
 import { prisma } from "./prisma.js";
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export function readActorEmail(req: Pick<Request, "get">): string {
-  const header = req.get("x-actor-email")?.trim().toLowerCase();
-  if (header && EMAIL_REGEX.test(header)) {
-    return header;
-  }
+/** Identidad del actor desde la sesión JWT (nunca desde headers spoofables). */
+export function readActorEmail(req: Request): string {
+  const email = req.auth?.email?.trim().toLowerCase();
+  if (email) return email;
   return "desconocido@atoo.local";
 }
 

@@ -1,5 +1,7 @@
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import express from "express";
+import { UserType } from "@prisma/client";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { landingAdminRouter, landingRouter } from "./routes/landing.js";
 import { authRouter } from "./routes/auth.js";
@@ -12,6 +14,7 @@ import { vehiclesRouter } from "./routes/vehicles.js";
 import { workshopPortalRouter } from "./routes/workshopPortal.js";
 import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
 import { pingGemini } from "./lib/geminiChainedContent.js";
+import { requireAuth, requireAdmin, requireSelfUserParam, requireRole } from "./middleware/auth.js";
 
 const app = express();
 
@@ -56,9 +59,11 @@ app.use(
       console.warn(`[cors] Origen rechazado: ${origin}`);
       callback(null, false);
     },
-    allowedHeaders: ["Content-Type", "X-Actor-Email"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
+app.use(cookieParser());
 app.use(express.json());
 
 app.get("/health", (_req, res) => {
@@ -130,14 +135,30 @@ app.get("/api/v1", (_req, res) => {
 
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", usersRouter);
-app.use("/api/v1/users/:userId/documents", documentsRouter);
-app.use("/api/v1/users/:userId/inspections", inspectionsRouter);
-app.use("/api/v1/workshop/:userId", workshopPortalRouter);
+app.use(
+  "/api/v1/users/:userId/documents",
+  requireAuth,
+  requireSelfUserParam({ allowAdmin: true }),
+  documentsRouter,
+);
+app.use(
+  "/api/v1/users/:userId/inspections",
+  requireAuth,
+  requireSelfUserParam({ allowAdmin: true }),
+  inspectionsRouter,
+);
+app.use(
+  "/api/v1/workshop/:userId",
+  requireAuth,
+  requireRole(UserType.WORKSHOP, UserType.ADMIN),
+  requireSelfUserParam({ allowAdmin: true }),
+  workshopPortalRouter,
+);
 app.use("/api/v1/vehicles", vehiclesRouter);
 app.use("/api/v1/landing", landingRouter);
-app.use("/api/v1/admin/landing", landingAdminRouter);
-app.use("/api/v1/admin/workshops", adminWorkshopsRouter);
-app.use("/api/v1/admin/inspections", adminInspectionsRouter);
+app.use("/api/v1/admin/landing", requireAuth, requireAdmin, landingAdminRouter);
+app.use("/api/v1/admin/workshops", requireAuth, requireAdmin, adminWorkshopsRouter);
+app.use("/api/v1/admin/inspections", requireAuth, requireAdmin, adminInspectionsRouter);
 
 app.use(errorHandler);
 

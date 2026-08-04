@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { Router } from "express";
 import { mapUserToProfile } from "../lib/userProfile.js";
 import { prisma } from "../lib/prisma.js";
+import { requireAuth, requireSelfUserParam } from "../middleware/auth.js";
 
 export const usersRouter = Router();
 
@@ -13,6 +14,7 @@ function paramUserId(req: Request): string {
 const profileSelect = {
   id: true,
   email: true,
+  phone: true,
   identityExtraction: {
     select: {
       firstName: true,
@@ -34,6 +36,8 @@ async function loadUserProfile(userId: string) {
   });
 }
 
+usersRouter.use("/:userId", requireAuth, requireSelfUserParam({ allowAdmin: true }));
+
 /** Perfil del cliente para dashboard y vistas autenticadas. */
 usersRouter.get("/:userId/profile", async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -52,8 +56,7 @@ usersRouter.get("/:userId/profile", async (req: Request, res: Response, next: Ne
 });
 
 /**
- * Datos para el paso 5 (confirmación): correo de registro, nombres/apellidos y dirección extraídos en BD.
- * El teléfono no se guarda aún: el cliente lo envía vacío para que el usuario lo complete.
+ * Datos para el paso 5 (confirmación): correo de registro, nombres/apellidos y dirección.
  */
 usersRouter.get("/:userId/application-confirmation", async (req: Request, res: Response, next: NextFunction) => {
   try {

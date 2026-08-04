@@ -103,6 +103,8 @@ model User {
   passwordHash          String?
   googleId              String?                    @unique
   userType              UserType
+  /// Teléfono de contacto editable por el usuario.
+  phone                 String?
   createdAt             DateTime                   @default(now())
   updatedAt             DateTime                   @updatedAt
   documents             Document[]

@@ -1,36 +1,22 @@
-import { ProcedureSuggestionStatus, UserType } from "@prisma/client";
+import { ProcedureSuggestionStatus } from "@prisma/client";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { formatCop } from "../lib/inspectionSession.js";
-import { readActorEmail } from "../lib/landingAuditLog.js";
 import { prisma } from "../lib/prisma.js";
 import { createUserNotification } from "../lib/userNotifications.js";
 import { buildUserDisplayName } from "../lib/userProfile.js";
 
 export const adminInspectionsRouter = Router();
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-async function requireAdminActor(req: Request, res: Response): Promise<{ id: string; email: string } | null> {
-  const email = readActorEmail(req);
-  if (!EMAIL_REGEX.test(email) || email === "desconocido@atoo.local") {
+function requireAdminActor(req: Request, res: Response): { id: string; email: string } | null {
+  if (!req.auth) {
     res.status(401).json({ error: "Inicia sesión como administrador para continuar" });
     return null;
   }
-
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true, email: true, userType: true },
-  });
-
-  if (!user || user.userType !== UserType.ADMIN) {
-    res.status(403).json({ error: "Solo administradores pueden autorizar procedimientos" });
-    return null;
-  }
-
-  return user;
+  return { id: req.auth.id, email: req.auth.email };
 }
 
 function mapSuggestion(row: {
@@ -106,7 +92,7 @@ const suggestionInclude = {
 
 adminInspectionsRouter.get("/procedure-suggestions", async (req, res, next) => {
   try {
-    const admin = await requireAdminActor(req, res);
+    const admin = requireAdminActor(req, res);
     if (!admin) return;
 
     const statusFilter = String(req.query.status ?? "PENDING_ADMIN");
@@ -131,7 +117,7 @@ adminInspectionsRouter.get("/procedure-suggestions", async (req, res, next) => {
 
 adminInspectionsRouter.get("/notifications", async (req, res, next) => {
   try {
-    const admin = await requireAdminActor(req, res);
+    const admin = requireAdminActor(req, res);
     if (!admin) return;
 
     const rows = await prisma.userNotification.findMany({
@@ -158,7 +144,7 @@ adminInspectionsRouter.get("/notifications", async (req, res, next) => {
 
 adminInspectionsRouter.patch("/notifications/:notificationId/read", async (req, res, next) => {
   try {
-    const admin = await requireAdminActor(req, res);
+    const admin = requireAdminActor(req, res);
     if (!admin) return;
 
     const notificationId = String(req.params.notificationId ?? "");
@@ -178,7 +164,7 @@ adminInspectionsRouter.patch("/notifications/:notificationId/read", async (req, 
 
 adminInspectionsRouter.patch("/procedure-suggestions/:suggestionId", async (req, res, next) => {
   try {
-    const admin = await requireAdminActor(req, res);
+    const admin = requireAdminActor(req, res);
     if (!admin) return;
 
     const suggestionId = String(req.params.suggestionId ?? "");

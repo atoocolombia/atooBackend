@@ -3,7 +3,7 @@ import { Prisma, UserType } from "@prisma/client";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import { generateMixedId } from "../lib/generateMixedId.js";
-import { readActorEmail, recordLandingAudit } from "../lib/landingAuditLog.js";
+import { recordLandingAudit } from "../lib/landingAuditLog.js";
 import { prisma } from "../lib/prisma.js";
 
 export const adminWorkshopsRouter = Router();
@@ -17,24 +17,12 @@ function paramWorkshopId(req: Request): string {
   return Array.isArray(v) ? v[0] ?? "" : v ?? "";
 }
 
-async function requireAdminActor(req: Request, res: Response): Promise<{ id: string; email: string } | null> {
-  const email = readActorEmail(req);
-  if (!EMAIL_REGEX.test(email) || email === "desconocido@atoo.local") {
+function requireAdminActor(req: Request, res: Response): { id: string; email: string } | null {
+  if (!req.auth) {
     res.status(401).json({ error: "Inicia sesión como administrador para continuar" });
     return null;
   }
-
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true, email: true, userType: true },
-  });
-
-  if (!user || user.userType !== UserType.ADMIN) {
-    res.status(403).json({ error: "Solo administradores pueden gestionar talleres" });
-    return null;
-  }
-
-  return user;
+  return { id: req.auth.id, email: req.auth.email };
 }
 
 function mapWorkshopRow(
@@ -65,7 +53,7 @@ function mapWorkshopRow(
 
 adminWorkshopsRouter.get("/", async (req, res, next) => {
   try {
-    const admin = await requireAdminActor(req, res);
+    const admin = requireAdminActor(req, res);
     if (!admin) return;
 
     const workshops = await prisma.workshop.findMany({
@@ -83,7 +71,7 @@ adminWorkshopsRouter.get("/", async (req, res, next) => {
 
 adminWorkshopsRouter.post("/", async (req, res, next) => {
   try {
-    const admin = await requireAdminActor(req, res);
+    const admin = requireAdminActor(req, res);
     if (!admin) return;
 
     const { name, address, city, email, password, phone } = req.body as {
@@ -194,7 +182,7 @@ adminWorkshopsRouter.post("/", async (req, res, next) => {
 
 adminWorkshopsRouter.patch("/:workshopId", async (req, res, next) => {
   try {
-    const admin = await requireAdminActor(req, res);
+    const admin = requireAdminActor(req, res);
     if (!admin) return;
 
     const workshopId = paramWorkshopId(req);
