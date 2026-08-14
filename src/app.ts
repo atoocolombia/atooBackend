@@ -24,8 +24,11 @@ const clientOrigins = (process.env.CLIENT_ORIGIN ?? "http://localhost:5173")
   .map((s) => s.trim())
   .filter(Boolean);
 
+const appEnv = (process.env.APP_ENV ?? "").trim().toLowerCase();
 const allowLocalhostDev =
-  process.env.NODE_ENV !== "production" && process.env.CORS_ALLOW_LOCALHOST !== "false";
+  appEnv !== "production" &&
+  process.env.NODE_ENV !== "production" &&
+  process.env.CORS_ALLOW_LOCALHOST !== "false";
 
 function isAllowedOrigin(origin: string): boolean {
   if (clientOrigins.includes(origin)) {
@@ -34,7 +37,12 @@ function isAllowedOrigin(origin: string): boolean {
   if (/^https:\/\/(www\.)?atoo\.io$/i.test(origin)) {
     return true;
   }
+  if (/^https:\/\/(www\.)?staging\.atoo\.io$/i.test(origin)) {
+    return appEnv !== "production";
+  }
   if (/^https:\/\/[a-z0-9-]+(-[a-z0-9-]+)*\.vercel\.app$/i.test(origin)) {
+    // El API de clientes no debe aceptar previews. Staging sí.
+    if (appEnv === "production") return false;
     return true;
   }
   if (
@@ -71,6 +79,7 @@ app.get("/health", (_req, res) => {
   res.status(200).json({
     ok: true,
     service: "landing-backend",
+    env: appEnv || process.env.NODE_ENV || "unknown",
   });
 });
 

@@ -119,3 +119,19 @@ npm start
 ```
 
 `db:migrate:deploy` aplica migraciones ya generadas, sin modo interactivo.
+
+## Ambientes (pruebas vs clientes)
+
+| Rama | Quién lo ve | Deploy |
+| --- | --- | --- |
+| `develop` | Equipo (ambiente de pruebas) | Railway staging + Vercel preview / staging.atoo.io |
+| `main` | Clientes | Railway production + www.atoo.io |
+
+Flujo de trabajo:
+
+1. `git checkout develop && git pull`
+2. `git checkout -b feature/…` o `fix/…`
+3. Abrir PR **hacia `develop`**
+4. Cuando esté listo para clientes, PR de `develop` → `main`
+
+El API de pruebas debe tener **otra base de datos** y `APP_ENV=staging`. El de clientes `APP_ENV=production`. No reutilices `DATABASE_URL` ni `JWT_SECRET` entre los dos.
