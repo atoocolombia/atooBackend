@@ -40,12 +40,14 @@ export async function createUserNotification(input: {
     throw err;
   }
 
-  void sendWebPushToUser(input.userId, {
-    title: input.title,
-    body: input.message,
-  }).catch((err) => {
+  try {
+    await sendWebPushToUser(input.userId, {
+      title: input.title,
+      body: input.message,
+    });
+  } catch (err) {
     console.warn("[web-push] No se pudo enviar el aviso", err);
-  });
+  }
   return true;
 }
 

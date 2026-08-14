@@ -236,6 +236,17 @@ workshopPortalRouter.patch("/appointments/:appointmentId", async (req, res, next
         message: `${ctx.workshop.name} aceptó tu propuesta. Tu cita quedó para el ${formatAppointmentWhen(existing.proposedAppointmentDate!, existing.proposedAppointmentTime)}.`,
         metadata: { appointmentId: existing.id },
       });
+    } else if (
+      status === InspectionAppointmentStatus.CONFIRMED &&
+      existing.status === InspectionAppointmentStatus.PENDING
+    ) {
+      await createUserNotification({
+        userId: existing.userId,
+        type: "appointment_confirmed",
+        title: "Cita confirmada",
+        message: `${ctx.workshop.name} confirmó tu cita para el ${formatAppointmentWhen(existing.appointmentDate, existing.appointmentTime)}.`,
+        metadata: { appointmentId: existing.id },
+      });
     }
 
     res.json(
