@@ -8,16 +8,12 @@ export type PushPayload = {
   url?: string;
 };
 
-const FALLBACK_VAPID_PUBLIC =
-  "BDMICdPYBVFQ9CLKyKog_FKUrQXHvoVTDbK1fjb3w66scQJDkmmShtTBPnjASGHs4oPeCaNiCGcCNWjHGFKTcpw";
-const FALLBACK_VAPID_PRIVATE = "A2jpgj_QKE0QW54prvmzxrI62He7fk2omM0uvjpv3a0";
-
 function vapidPublicKey(): string {
-  return process.env.VAPID_PUBLIC_KEY?.trim() || FALLBACK_VAPID_PUBLIC;
+  return process.env.VAPID_PUBLIC_KEY?.trim() || "";
 }
 
 function vapidPrivateKey(): string {
-  return process.env.VAPID_PRIVATE_KEY?.trim() || FALLBACK_VAPID_PRIVATE;
+  return process.env.VAPID_PRIVATE_KEY?.trim() || "";
 }
 
 export function getVapidPublicKey(): string | null {
@@ -28,7 +24,12 @@ export function getVapidPublicKey(): string | null {
 function ensureVapid(): boolean {
   const publicKey = vapidPublicKey();
   const privateKey = vapidPrivateKey();
-  if (!publicKey || !privateKey) return false;
+  if (!publicKey || !privateKey) {
+    console.warn(
+      "[web-push] Faltan VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY en Railway. Los avisos al celular no se envían.",
+    );
+    return false;
+  }
   const subject =
     process.env.VAPID_SUBJECT?.trim() || "mailto:hola@atoo.io";
   webpush.setVapidDetails(subject, publicKey, privateKey);
