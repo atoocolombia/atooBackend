@@ -8,26 +8,30 @@ export type PushPayload = {
   url?: string;
 };
 
-function vapidConfigured(): boolean {
-  return Boolean(
-    process.env.VAPID_PUBLIC_KEY?.trim() && process.env.VAPID_PRIVATE_KEY?.trim(),
-  );
+const FALLBACK_VAPID_PUBLIC =
+  "BDMICdPYBVFQ9CLKyKog_FKUrQXHvoVTDbK1fjb3w66scQJDkmmShtTBPnjASGHs4oPeCaNiCGcCNWjHGFKTcpw";
+const FALLBACK_VAPID_PRIVATE = "A2jpgj_QKE0QW54prvmzxrI62He7fk2omM0uvjpv3a0";
+
+function vapidPublicKey(): string {
+  return process.env.VAPID_PUBLIC_KEY?.trim() || FALLBACK_VAPID_PUBLIC;
+}
+
+function vapidPrivateKey(): string {
+  return process.env.VAPID_PRIVATE_KEY?.trim() || FALLBACK_VAPID_PRIVATE;
 }
 
 export function getVapidPublicKey(): string | null {
-  const key = process.env.VAPID_PUBLIC_KEY?.trim();
+  const key = vapidPublicKey();
   return key || null;
 }
 
 function ensureVapid(): boolean {
-  if (!vapidConfigured()) return false;
+  const publicKey = vapidPublicKey();
+  const privateKey = vapidPrivateKey();
+  if (!publicKey || !privateKey) return false;
   const subject =
     process.env.VAPID_SUBJECT?.trim() || "mailto:hola@atoo.io";
-  webpush.setVapidDetails(
-    subject,
-    process.env.VAPID_PUBLIC_KEY!.trim(),
-    process.env.VAPID_PRIVATE_KEY!.trim(),
-  );
+  webpush.setVapidDetails(subject, publicKey, privateKey);
   return true;
 }
 
@@ -61,7 +65,11 @@ export async function sendWebPushToUser(
     }),
     prisma.pushSubscription.findMany({ where: { userId } }),
   ]);
-  if (!user || subscriptions.length === 0) return;
+  if (!user) return;
+  if (subscriptions.length === 0) {
+    console.warn(`[web-push] ${userId} no tiene dispositivos suscritos`);
+    return;
+  }
 
   const body = JSON.stringify({
     title: payload.title.slice(0, 80),
