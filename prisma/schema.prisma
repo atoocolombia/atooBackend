@@ -115,6 +115,7 @@ model User {
   managedWorkshop       Workshop?
   notifications         UserNotification[]
   inspectionSurveys     InspectionSurvey[]
+  pushSubscriptions     PushSubscription[]
 }
 
 /// Archivos o imágenes subidos por usuario (metadatos en BD; bytes en disco bajo uploads/).
@@ -378,4 +379,19 @@ model UserNotification {
   @@index([userId, read])
   @@index([userId, createdAt(sort: Desc)])
   @@unique([userId, reminderKey])
+}
+
+/// Suscripción Web Push (PWA) para avisos en el celular con la app cerrada.
+model PushSubscription {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }

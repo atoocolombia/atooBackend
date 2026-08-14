@@ -21,6 +21,7 @@ import {
   createUserNotification,
   formatAppointmentWhen,
 } from "../lib/userNotifications.js";
+import { sendWebPushToWorkshop } from "../lib/webPush.js";
 import {
   allowsOpenBooking,
   isValidAppointmentTime,
@@ -470,6 +471,13 @@ inspectionsRouter.post("/appointments", (req, res, next) => {
         });
       });
 
+      void sendWebPushToWorkshop(workshopId, {
+        title: "Nueva solicitud de cliente",
+        body: `Pidieron cita el ${appointmentDate}${appointmentTime ? ` a las ${appointmentTime}` : ""}.`,
+      }).catch((err) => {
+        console.warn("[web-push] No se pudo avisar al taller", err);
+      });
+
       res.status(201).json(mapInspectionAppointment(appointment));
     } catch (e) {
       if (e instanceof Error && e.message === "CUPO_LLENO") {
@@ -652,6 +660,13 @@ inspectionsRouter.patch("/appointments/:appointmentId/reschedule-response", asyn
         title: "Propuesta enviada al taller",
         message: `Enviaste una contra-propuesta para el ${formatAppointmentWhen(newDate, newTime)}. El taller la revisará.`,
         metadata: { appointmentId: existing.id },
+      });
+
+      void sendWebPushToWorkshop(existing.workshopId, {
+        title: "Cliente propuso otra fecha",
+        body: `Nueva fecha: ${formatAppointmentWhen(newDate, newTime)}.`,
+      }).catch((err) => {
+        console.warn("[web-push] No se pudo avisar al taller", err);
       });
 
       res.json(mapInspectionAppointment(updated));

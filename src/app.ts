@@ -12,6 +12,7 @@ import { inspectionsRouter } from "./routes/inspections.js";
 import { usersRouter } from "./routes/users.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
 import { workshopPortalRouter } from "./routes/workshopPortal.js";
+import { pushRouter } from "./routes/push.js";
 import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
 import { pingGemini } from "./lib/geminiChainedContent.js";
 import { requireAuth, requireAdmin, requireSelfUserParam, requireRole } from "./middleware/auth.js";
@@ -134,6 +135,7 @@ app.get("/api/v1", (_req, res) => {
 });
 
 app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/push", pushRouter);
 app.use("/api/v1/users", usersRouter);
 app.use(
   "/api/v1/users/:userId/documents",

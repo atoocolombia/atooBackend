@@ -1,5 +1,5 @@
-import { generateMixedId } from "./generateMixedId.js";
 import { prisma } from "./prisma.js";
+import { createUserNotification } from "./userNotifications.js";
 
 function bogotaDate(value = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -45,23 +45,12 @@ export async function ensureInspectionReminders(userId: string): Promise<void> {
     }),
   ]);
 
-  const notifications: Array<{
-    id: string;
-    userId: string;
-    type: string;
-    title: string;
-    message: string;
-    reminderKey: string;
-    metadata: object;
-  }> = [];
-
   if (plan && openAppointments === 0) {
     const dueDate = plan.nextInspectionDueAt.toISOString().slice(0, 10);
     const daysUntilDue = dateDiffDays(today, dueDate);
     if (daysUntilDue <= 14) {
       const overdue = daysUntilDue < 0;
-      notifications.push({
-        id: generateMixedId(),
+      await createUserNotification({
         userId,
         type: "inspection_reminder",
         title: overdue ? "Revisión vencida" : "Tu revisión se acerca",
@@ -79,8 +68,7 @@ export async function ensureInspectionReminders(userId: string): Promise<void> {
   }
 
   for (const appointment of tomorrowAppointments) {
-    notifications.push({
-      id: generateMixedId(),
+    await createUserNotification({
       userId,
       type: "inspection_reminder",
       title: "Tu cita es mañana",
@@ -91,13 +79,6 @@ export async function ensureInspectionReminders(userId: string): Promise<void> {
         appointmentId: appointment.id,
         appointmentDate: appointment.appointmentDate,
       },
-    });
-  }
-
-  if (notifications.length > 0) {
-    await prisma.userNotification.createMany({
-      data: notifications,
-      skipDuplicates: true,
     });
   }
 }
