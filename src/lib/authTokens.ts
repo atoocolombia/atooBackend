@@ -54,12 +54,11 @@ export function verifyAuthToken(token: string): AuthTokenPayload {
 }
 
 export function authCookieOptions(): CookieOptions {
-  const crossSite = process.env.AUTH_COOKIE_SAMESITE?.toLowerCase() === "none"
-    || process.env.NODE_ENV === "production";
+  const crossSite = process.env.AUTH_COOKIE_SAMESITE?.toLowerCase() === "none";
 
   return {
     httpOnly: true,
-    secure: crossSite || process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" || crossSite,
     sameSite: crossSite ? "none" : "lax",
     maxAge: SESSION_TTL_SECONDS * 1000,
     path: "/",
@@ -94,4 +93,16 @@ export function publicUserDto(user: {
     userType: user.userType,
     createdAt: user.createdAt,
   };
+}
+
+export function sendAuthSession(
+  res: Response,
+  user: { id: string; email: string; userType: UserType; createdAt: Date },
+  status = 200,
+): void {
+  const token = setAuthCookie(res, user);
+  res.status(status).json({
+    ...publicUserDto(user),
+    token,
+  });
 }

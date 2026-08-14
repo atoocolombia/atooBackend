@@ -4,8 +4,7 @@ import { Router } from "express";
 import { authenticateWithGoogle } from "../lib/authenticateWithGoogle.js";
 import {
   clearAuthCookie,
-  publicUserDto,
-  setAuthCookie,
+  sendAuthSession,
 } from "../lib/authTokens.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { mapUserToProfile } from "../lib/userProfile.js";
@@ -73,8 +72,7 @@ authRouter.post("/login", async (req, res, next) => {
       return;
     }
 
-    setAuthCookie(res, user);
-    res.status(200).json(publicUserDto(user));
+    sendAuthSession(res, user, 200);
   } catch (err) {
     next(err);
   }
@@ -143,8 +141,7 @@ authRouter.post("/register", async (req, res, next) => {
       throw new Error("No se pudo generar un id único");
     }
 
-    setAuthCookie(res, user);
-    res.status(201).json(publicUserDto(user));
+    sendAuthSession(res, user, 201);
   } catch (err) {
     next(err);
   }
@@ -173,8 +170,7 @@ authRouter.post("/google", async (req, res, next) => {
     }
 
     const user = await authenticateWithGoogle(credential, UserType.USER);
-    setAuthCookie(res, user);
-    res.status(200).json(publicUserDto(user));
+    sendAuthSession(res, user, 200);
   } catch (err) {
     if (err instanceof Error) {
       if (err.message.includes("GOOGLE_CLIENT_ID")) {
@@ -209,7 +205,7 @@ authRouter.get("/me", optionalAuth, async (req, res, next) => {
       res.status(401).json({ error: "Sesión inválida" });
       return;
     }
-    res.json(publicUserDto(user));
+    sendAuthSession(res, user, 200);
   } catch (err) {
     next(err);
   }
