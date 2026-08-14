@@ -3,7 +3,8 @@ import type { CookieOptions, Response } from "express";
 import jwt from "jsonwebtoken";
 
 export const AUTH_COOKIE_NAME = "atoo_token";
-export const SESSION_TTL_SECONDS = 12 * 60 * 60;
+/** 30 días: en móvil la app se cierra y el usuario espera seguir dentro. */
+export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export type AuthTokenPayload = {
   sub: string;
