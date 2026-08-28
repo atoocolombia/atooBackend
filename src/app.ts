@@ -13,6 +13,7 @@ import { usersRouter } from "./routes/users.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
 import { workshopPortalRouter } from "./routes/workshopPortal.js";
 import { pushRouter } from "./routes/push.js";
+import { whatsappWebhookRouter } from "./routes/whatsappWebhook.js";
 import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
 import { pingGemini } from "./lib/geminiChainedContent.js";
 import { requireAuth, requireAdmin, requireSelfUserParam, requireRole } from "./middleware/auth.js";
@@ -74,6 +75,8 @@ app.use(
 );
 app.use(cookieParser());
 app.use(express.json());
+
+app.use("/webhooks/whatsapp", whatsappWebhookRouter);
 
 app.get("/health", (_req, res) => {
   res.status(200).json({
