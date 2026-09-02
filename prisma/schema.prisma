@@ -119,6 +119,8 @@ model User {
   application           Application?
   vehicleDeliveries     VehicleDelivery[] @relation("ClientDeliveries")
   advisorDeliveries     VehicleDelivery[] @relation("AdvisorDeliveries")
+  registeredPayments    ClientPayment[]   @relation("RegisteredPayments")
+  clientPayments        ClientPayment[]   @relation("ClientPayments")
 }
 
 enum ApplicationStatus {
@@ -487,4 +489,24 @@ model PushSubscription {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+/// Pagos registrados manualmente por el analista.
+model ClientPayment {
+  id                 String   @id
+  idDocumentNumber   String
+  amountCop          Int
+  paidAt             DateTime
+  registeredByUserId String
+  registeredBy       User     @relation("RegisteredPayments", fields: [registeredByUserId], references: [id], onDelete: Restrict)
+  userId             String?
+  user               User?    @relation("ClientPayments", fields: [userId], references: [id], onDelete: SetNull)
+  clientName         String?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([idDocumentNumber, paidAt(sort: Desc)])
+  @@index([paidAt(sort: Desc)])
+  @@index([registeredByUserId])
 }
