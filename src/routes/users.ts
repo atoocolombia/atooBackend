@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { Router } from "express";
+import { getClientAccessState } from "../lib/clientAccess.js";
 import { mapUserToProfile } from "../lib/userProfile.js";
 import { prisma } from "../lib/prisma.js";
 import { submitApplication } from "../lib/vehicleDeliveryService.js";
@@ -38,6 +39,16 @@ async function loadUserProfile(userId: string) {
 }
 
 usersRouter.use("/:userId", requireAuth, requireSelfUserParam({ allowAdmin: true }));
+
+/** Estado del portal cliente según solicitud y entrega. */
+usersRouter.get("/:userId/client-access", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const access = await getClientAccessState(paramUserId(req));
+    res.json(access);
+  } catch (err) {
+    next(err);
+  }
+});
 
 /** Perfil del cliente para dashboard y vistas autenticadas. */
 usersRouter.get("/:userId/profile", async (req: Request, res: Response, next: NextFunction) => {
