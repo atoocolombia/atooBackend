@@ -1,3 +1,5 @@
+import { recordSendError, recordSendOk } from "./whatsappDiagnostics.js";
+
 const GRAPH = "https://graph.facebook.com/v21.0";
 
 export function isWhatsAppConfigured(): boolean {
@@ -31,8 +33,12 @@ export async function sendWhatsAppText(to: string, body: string): Promise<void> 
 
   if (!res.ok) {
     const detail = await res.text();
-    console.error("[whatsapp] Error al enviar:", res.status, detail);
+    const message = `${res.status}: ${detail}`;
+    recordSendError(message);
+    console.error("[whatsapp] Error al enviar:", message);
+    throw new Error(message);
   }
+  recordSendOk();
 }
 
 /** Envía varios mensajes seguidos (menú paso a paso). */
