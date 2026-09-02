@@ -55,7 +55,7 @@ export async function getClientAccessState(userId: string): Promise<ClientAccess
   if (delivery && delivery.status !== DeliveryStatus.COMPLETED) {
     const deliveryMessage =
       delivery.status === DeliveryStatus.AWAITING_CLIENT_CONFIRMATION
-        ? "Tu vehículo fue entregado. Revisa el enlace de confirmación que te enviamos por WhatsApp."
+        ? "Tu vehículo fue entregado. Revisa el enlace de confirmación que te enviamos por correo."
         : "Tu vehículo está en proceso de entrega. Te avisaremos cuando puedas acceder a tu panel.";
 
     return {

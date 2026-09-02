@@ -9,8 +9,12 @@ import {
 } from "./deliveryDefaults.js";
 import { generateMixedId } from "./generateMixedId.js";
 import { prisma } from "./prisma.js";
-import { sendWhatsAppText } from "./whatsappCloudApi.js";
 import { buildClientName } from "./mapVehicleDelivery.js";
+import {
+  sendDeliveryActivationEmail,
+  sendDeliveryConfirmationEmail,
+  sendDeliveryDocumentsEmail,
+} from "./deliveryEmails.js";
 
 export async function loadUserApplicationProfile(userId: string) {
   return prisma.user.findUnique({
@@ -115,14 +119,27 @@ export async function createManualDelivery(input: {
   });
 }
 
-export async function notifyDeliveryWhatsApp(
-  phone: string | null | undefined,
-  message: string,
+export async function notifyDeliveryDocuments(
+  clientName: string,
+  email: string,
 ): Promise<void> {
-  if (!phone?.trim()) return;
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length < 10) return;
-  await sendWhatsAppText(digits, message);
+  await sendDeliveryDocumentsEmail(clientName, email);
+}
+
+export async function notifyDeliveryActivation(
+  clientName: string,
+  email: string,
+  setupUrl: string,
+): Promise<void> {
+  await sendDeliveryActivationEmail(clientName, email, setupUrl);
+}
+
+export async function notifyDeliveryConfirmation(
+  clientName: string,
+  email: string,
+  confirmUrl: string,
+): Promise<void> {
+  await sendDeliveryConfirmationEmail(clientName, email, confirmUrl);
 }
 
 export function deliveryConfirmationToken(): string {

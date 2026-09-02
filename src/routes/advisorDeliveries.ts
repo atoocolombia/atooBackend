@@ -8,7 +8,9 @@ import {
   deliveryConfirmationToken,
   finalizeClientVehiclePlan,
   mergeAccessoryChecklist,
-  notifyDeliveryWhatsApp,
+  notifyDeliveryActivation,
+  notifyDeliveryConfirmation,
+  notifyDeliveryDocuments,
   parseVehiclePatch,
   validateReadyToComplete,
 } from "../lib/vehicleDeliveryService.js";
@@ -61,10 +63,7 @@ advisorDeliveriesRouter.post("/:deliveryId/send-documents", async (req, res, nex
       },
     });
 
-    await notifyDeliveryWhatsApp(
-      row.phone,
-      `Hola ${row.clientName}, desde *atoo* te enviamos los documentos para firmar: contrato Rent to Own, seguro y pagaré. Revisa tu correo ${row.email} o responde por este chat cuando los hayas firmado.`,
-    );
+    await notifyDeliveryDocuments(row.clientName, row.email);
 
     res.json(mapVehicleDelivery(row));
   } catch (err) {
@@ -187,10 +186,7 @@ advisorDeliveriesRouter.post("/:deliveryId/complete", async (req, res, next) => 
         },
       });
 
-      await notifyDeliveryWhatsApp(
-        row.phone,
-        `Hola ${row.clientName}, tu vehículo *atoo* fue entregado. Crea tu acceso con este enlace: ${setupUrl}\n\nVerás tu correo registrado y podrás crear tu contraseña para ingresar a la plataforma.`,
-      );
+      await notifyDeliveryActivation(row.clientName, row.email, setupUrl);
 
       res.json({ ...mapVehicleDelivery(row), setupUrl });
       return;
@@ -209,10 +205,7 @@ advisorDeliveriesRouter.post("/:deliveryId/complete", async (req, res, next) => 
       },
     });
 
-    await notifyDeliveryWhatsApp(
-      row.phone,
-      `Hola ${row.clientName}, tu vehículo *atoo* fue entregado. Confirma el recibido aquí: ${confirmUrl}\n\nTambién puedes responder *CONFIRMO ENTREGA* por este chat.`,
-    );
+    await notifyDeliveryConfirmation(row.clientName, row.email, confirmUrl);
 
     res.json({ ...mapVehicleDelivery(row), confirmUrl });
   } catch (err) {
