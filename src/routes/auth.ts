@@ -8,6 +8,7 @@ import {
 } from "../lib/authTokens.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { mapUserToProfile } from "../lib/userProfile.js";
+import { validatePassword } from "../lib/passwordPolicy.js";
 import { prisma } from "../lib/prisma.js";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 
@@ -90,8 +91,13 @@ authRouter.post("/register", async (req, res, next) => {
       res.status(400).json({ error: "Correo inválido o obligatorio" });
       return;
     }
-    if (!password || typeof password !== "string" || password.length < 8) {
-      res.status(400).json({ error: "La contraseña es obligatoria y debe tener al menos 8 caracteres" });
+    if (!password || typeof password !== "string") {
+      res.status(400).json({ error: "La contraseña es obligatoria" });
+      return;
+    }
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      res.status(400).json({ error: passwordError });
       return;
     }
 
@@ -309,8 +315,13 @@ authRouter.patch("/password", requireAuth, async (req, res, next) => {
       res.status(400).json({ error: "La contraseña actual es obligatoria" });
       return;
     }
-    if (!newPassword || typeof newPassword !== "string" || newPassword.length < 8) {
-      res.status(400).json({ error: "La nueva contraseña debe tener al menos 8 caracteres" });
+    if (!newPassword || typeof newPassword !== "string") {
+      res.status(400).json({ error: "La nueva contraseña es obligatoria" });
+      return;
+    }
+    const newPasswordError = validatePassword(newPassword);
+    if (newPasswordError) {
+      res.status(400).json({ error: newPasswordError });
       return;
     }
 
