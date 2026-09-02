@@ -15,6 +15,7 @@ import { workshopPortalRouter } from "./routes/workshopPortal.js";
 import { pushRouter } from "./routes/push.js";
 import { advisorDeliveriesRouter } from "./routes/advisorDeliveries.js";
 import { analystApplicationsRouter, deliveryConfirmationRouter } from "./routes/analystApplications.js";
+import { analystPaymentsRouter } from "./routes/analystPayments.js";
 import { accountSetupRouter } from "./routes/accountSetup.js";
 import { whatsappWebhookRouter } from "./routes/whatsappWebhook.js";
 import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
@@ -179,6 +180,7 @@ app.use("/api/v1/admin/inspections", requireAuth, requireAdmin, adminInspections
 
 app.use("/api/v1/advisor/deliveries", advisorDeliveriesRouter);
 app.use("/api/v1/analyst", analystApplicationsRouter);
+app.use("/api/v1/analyst/payments", analystPaymentsRouter);
 app.use("/api/v1/delivery-confirm", deliveryConfirmationRouter);
 app.use("/api/v1/account-setup", accountSetupRouter);
 
