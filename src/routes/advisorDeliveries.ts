@@ -169,15 +169,41 @@ advisorDeliveriesRouter.post("/:deliveryId/complete", async (req, res, next) => 
       return;
     }
 
-    const token = deliveryConfirmationToken();
     const clientOrigin = (process.env.CLIENT_ORIGIN ?? "https://www.atoo.io").split(",")[0]?.trim();
+    const now = new Date();
+    const isManualEntry = !current.applicationId;
+
+    if (isManualEntry) {
+      const onboardingToken = deliveryConfirmationToken();
+      const setupUrl = `${clientOrigin}/activar-cuenta/${onboardingToken}`;
+
+      const row = await prisma.vehicleDelivery.update({
+        where: { id: req.params.deliveryId },
+        data: {
+          status: DeliveryStatus.AWAITING_CLIENT_CONFIRMATION,
+          completedByAdvisorAt: now,
+          onboardingToken,
+          advisorUserId: req.auth!.id,
+        },
+      });
+
+      await notifyDeliveryWhatsApp(
+        row.phone,
+        `Hola ${row.clientName}, tu vehículo *atoo* fue entregado. Crea tu acceso con este enlace: ${setupUrl}\n\nVerás tu correo registrado y podrás crear tu contraseña para ingresar a la plataforma.`,
+      );
+
+      res.json({ ...mapVehicleDelivery(row), setupUrl });
+      return;
+    }
+
+    const token = deliveryConfirmationToken();
     const confirmUrl = `${clientOrigin}/entrega/confirmar/${token}`;
 
     const row = await prisma.vehicleDelivery.update({
       where: { id: req.params.deliveryId },
       data: {
         status: DeliveryStatus.AWAITING_CLIENT_CONFIRMATION,
-        completedByAdvisorAt: new Date(),
+        completedByAdvisorAt: now,
         confirmationToken: token,
         advisorUserId: req.auth!.id,
       },
