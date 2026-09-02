@@ -1,5 +1,7 @@
+import { DeliveryStatus } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { sendWhatsAppSequence, sendWhatsAppText } from "./whatsappCloudApi.js";
+import { finalizeClientVehiclePlan } from "./vehicleDeliveryService.js";
 
 type BotState =
   | "awaiting_profile"
@@ -244,6 +246,32 @@ export async function handleWhatsAppIncoming(waId: string, textBody: string): Pr
   if (!text) return;
 
   const normalized = normalizeText(text);
+
+  if (/confirmo entrega|confirmar entrega|recib[ií] el veh[ií]culo/.test(normalized)) {
+    const digits = waId.replace(/\D/g, "");
+    const delivery = await prisma.vehicleDelivery.findFirst({
+      where: {
+        status: DeliveryStatus.AWAITING_CLIENT_CONFIRMATION,
+        OR: [
+          { phone: { contains: digits.slice(-10) } },
+          { phone: { contains: digits } },
+        ],
+      },
+      orderBy: { completedByAdvisorAt: "desc" },
+    });
+    if (delivery) {
+      await prisma.vehicleDelivery.update({
+        where: { id: delivery.id },
+        data: { status: DeliveryStatus.COMPLETED, clientConfirmedAt: new Date() },
+      });
+      await finalizeClientVehiclePlan(delivery.id);
+      await sendWhatsAppText(
+        waId,
+        `Gracias, *${delivery.clientName}*. Registramos la confirmación de entrega de tu vehículo atoo. ¡Buen camino!`,
+      );
+      return;
+    }
+  }
 
   if (/^(hola|buenas|menu|menú|inicio|ayuda|soporte|atoo)/.test(normalized)) {
     await welcomeSequence(waId);

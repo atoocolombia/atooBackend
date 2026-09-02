@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { Router } from "express";
 import { mapUserToProfile } from "../lib/userProfile.js";
 import { prisma } from "../lib/prisma.js";
+import { submitApplication } from "../lib/vehicleDeliveryService.js";
 import { requireAuth, requireSelfUserParam } from "../middleware/auth.js";
 
 export const usersRouter = Router();
@@ -76,6 +77,15 @@ usersRouter.get("/:userId/application-confirmation", async (req: Request, res: R
       address: profile.address,
       phone: profile.phone,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+usersRouter.post("/:userId/application/submit", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const application = await submitApplication(paramUserId(req));
+    res.status(201).json(application);
   } catch (err) {
     next(err);
   }

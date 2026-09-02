@@ -116,6 +116,98 @@ model User {
   notifications         UserNotification[]
   inspectionSurveys     InspectionSurvey[]
   pushSubscriptions     PushSubscription[]
+  application           Application?
+  vehicleDeliveries     VehicleDelivery[] @relation("ClientDeliveries")
+  advisorDeliveries     VehicleDelivery[] @relation("AdvisorDeliveries")
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+/// Solicitud del cliente tras completar documentos en /solicitud.
+model Application {
+  id                 String            @id
+  userId             String            @unique
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status             ApplicationStatus @default(SUBMITTED)
+  submittedAt        DateTime          @default(now())
+  reviewedAt         DateTime?
+  reviewedByUserId   String?
+  rejectionReason    String?
+  vehicleDelivery    VehicleDelivery?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([status, submittedAt(sort: Desc)])
+}
+
+enum DeliveryStatus {
+  PENDING_DOCUMENTS
+  DOCUMENTS_SENT
+  DOCUMENTS_SIGNED
+  IN_DELIVERY
+  AWAITING_CLIENT_CONFIRMATION
+  COMPLETED
+}
+
+/// Proceso de entrega física del vehículo (desde solicitud aprobada o alta manual del analista).
+model VehicleDelivery {
+  id                 String         @id
+  userId             String?
+  user               User?          @relation("ClientDeliveries", fields: [userId], references: [id], onDelete: SetNull)
+  applicationId      String?        @unique
+  application        Application?   @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  advisorUserId      String?
+  advisor            User?          @relation("AdvisorDeliveries", fields: [advisorUserId], references: [id], onDelete: SetNull)
+
+  clientName         String
+  idDocumentNumber   String
+  address            String?
+  email              String
+  phone              String?
+  deliveryLocation   String?
+
+  status             DeliveryStatus @default(PENDING_DOCUMENTS)
+
+  contractSentAt         DateTime?
+  contractSignedAt       DateTime?
+  insuranceSentAt        DateTime?
+  insuranceSignedAt      DateTime?
+  promissoryNoteSentAt   DateTime?
+  promissoryNoteSignedAt DateTime?
+
+  vin                    String?
+  taxPayment             String?
+  soatPayment            String?
+  platesChassisDecl      String?
+  engineNumber           String?
+  serialNumber           String?
+  axles                  String?
+  pbvKg                  String?
+  color                  String?
+  fuelType               String?
+  vehicleClass           String?
+  brand                  String?
+  line                   String?
+  model                  String?
+  bodyType               String?
+  passengerCapacity      String?
+  displacement           String?
+
+  accessoryChecklist     Json?
+
+  completedByAdvisorAt   DateTime?
+  clientConfirmedAt      DateTime?
+  confirmationToken      String?        @unique
+
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([advisorUserId])
 }
 
 /// Archivos o imágenes subidos por usuario (metadatos en BD; bytes en disco bajo uploads/).

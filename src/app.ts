@@ -13,6 +13,8 @@ import { usersRouter } from "./routes/users.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
 import { workshopPortalRouter } from "./routes/workshopPortal.js";
 import { pushRouter } from "./routes/push.js";
+import { advisorDeliveriesRouter } from "./routes/advisorDeliveries.js";
+import { analystApplicationsRouter, deliveryConfirmationRouter } from "./routes/analystApplications.js";
 import { whatsappWebhookRouter } from "./routes/whatsappWebhook.js";
 import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
 import { pingGemini } from "./lib/geminiChainedContent.js";
@@ -173,6 +175,10 @@ app.use("/api/v1/landing", landingRouter);
 app.use("/api/v1/admin/landing", requireAuth, requireAdmin, landingAdminRouter);
 app.use("/api/v1/admin/workshops", requireAuth, requireAdmin, adminWorkshopsRouter);
 app.use("/api/v1/admin/inspections", requireAuth, requireAdmin, adminInspectionsRouter);
+
+app.use("/api/v1/advisor/deliveries", advisorDeliveriesRouter);
+app.use("/api/v1/analyst", analystApplicationsRouter);
+app.use("/api/v1/delivery-confirm", deliveryConfirmationRouter);
 
 app.use(errorHandler);
 
