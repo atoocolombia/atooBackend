@@ -53,8 +53,22 @@ function actionButton(label: string, href: string): string {
   <p style="margin:0;color:#6b7280;font-size:13px;word-break:break-all;">${safeHref}</p>`;
 }
 
+function normalizeClientEmail(email: string | null | undefined): string {
+  const normalized = email?.trim().toLowerCase() ?? "";
+  if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    throw new Error("El cliente no tiene un correo válido registrado en la entrega");
+  }
+  return normalized;
+}
+
+function resolveFromAddress(): string {
+  const from = process.env.RESEND_FROM?.trim() || "soporte@atoo.io";
+  if (from.includes("<")) return from;
+  return `atoo soporte <${from}>`;
+}
+
 export function isEmailConfigured(): boolean {
-  return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM?.trim());
+  return Boolean(process.env.RESEND_API_KEY?.trim());
 }
 
 export async function sendTransactionalEmail(input: {
@@ -64,20 +78,16 @@ export async function sendTransactionalEmail(input: {
   text: string;
 }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.RESEND_FROM?.trim();
-  const to = input.to.trim().toLowerCase();
+  const from = resolveFromAddress();
+  const to = normalizeClientEmail(input.to);
 
-  if (!apiKey || !from) {
-    console.warn("[email] Falta RESEND_API_KEY o RESEND_FROM");
+  if (!apiKey) {
+    console.warn("[email] Falta RESEND_API_KEY");
     throw new Error("El servicio de correo no está configurado");
   }
 
-  if (!to.includes("@")) {
-    throw new Error("Correo del cliente inválido");
-  }
-
   const resend = new Resend(apiKey);
-  const { error } = await resend.emails.send({
+  const { data, error } = await resend.emails.send({
     from,
     to,
     subject: input.subject,
@@ -89,9 +99,12 @@ export async function sendTransactionalEmail(input: {
     console.error("[email] Error al enviar:", error);
     throw new Error(error.message ?? "No se pudo enviar el correo");
   }
+
+  console.info(`[email] Enviado a ${to} desde ${from} (id: ${data?.id ?? "n/a"})`);
 }
 
 export async function sendDeliveryDocumentsEmail(clientName: string, email: string): Promise<void> {
+  const clientEmail = normalizeClientEmail(email);
   const safeName = escapeHtml(clientName);
   const html = emailLayout(
     "Documentos para firmar",
@@ -105,7 +118,7 @@ export async function sendDeliveryDocumentsEmail(clientName: string, email: stri
   );
 
   await sendTransactionalEmail({
-    to: email,
+    to: clientEmail,
     subject: "Documentos para firmar — atoo",
     html,
     text: `Hola ${clientName}, desde atoo te enviamos los documentos para firmar: contrato Rent to Own, seguro y pagaré. Avísanos cuando los hayas firmado.`,
@@ -117,6 +130,7 @@ export async function sendDeliveryActivationEmail(
   email: string,
   setupUrl: string,
 ): Promise<void> {
+  const clientEmail = normalizeClientEmail(email);
   const safeName = escapeHtml(clientName);
   const html = emailLayout(
     "Activa tu cuenta atoo",
@@ -124,16 +138,16 @@ export async function sendDeliveryActivationEmail(
       Hola ${safeName}, tu vehículo <strong>atoo</strong> fue entregado.
     </p>
     <p style="margin:0 0 12px;color:#374151;line-height:1.6;">
-      Tu correo registrado es <strong>${escapeHtml(email)}</strong>. Crea tu contraseña para ingresar a la plataforma.
+      Tu correo registrado es <strong>${escapeHtml(clientEmail)}</strong>. Crea tu contraseña para ingresar a la plataforma.
     </p>
     ${actionButton("Crear contraseña e ingresar", setupUrl)}`,
   );
 
   await sendTransactionalEmail({
-    to: email,
+    to: clientEmail,
     subject: "Activa tu cuenta atoo",
     html,
-    text: `Hola ${clientName}, tu vehículo atoo fue entregado. Crea tu acceso aquí: ${setupUrl}. Tu correo registrado es ${email}.`,
+    text: `Hola ${clientName}, tu vehículo atoo fue entregado. Crea tu acceso aquí: ${setupUrl}. Tu correo registrado es ${clientEmail}.`,
   });
 }
 
@@ -142,6 +156,7 @@ export async function sendDeliveryConfirmationEmail(
   email: string,
   confirmUrl: string,
 ): Promise<void> {
+  const clientEmail = normalizeClientEmail(email);
   const safeName = escapeHtml(clientName);
   const html = emailLayout(
     "Confirma la entrega de tu vehículo",
@@ -155,7 +170,7 @@ export async function sendDeliveryConfirmationEmail(
   );
 
   await sendTransactionalEmail({
-    to: email,
+    to: clientEmail,
     subject: "Confirma la entrega de tu vehículo atoo",
     html,
     text: `Hola ${clientName}, tu vehículo atoo fue entregado. Confirma el recibido aquí: ${confirmUrl}`,
