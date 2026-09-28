@@ -6,6 +6,28 @@ import { detectSupportHumanRequest } from "./detectSupportHumanRequest.js";
 import { sendSupportHandoffEmail } from "./supportHandoffEmail.js";
 import { SUPPORT_TOPICS } from "./supportKnowledgePaths.js";
 import { buildClientName } from "./mapVehicleDelivery.js";
+import { createUserNotification } from "./userNotifications.js";
+
+const SUPPORT_CHAT_PUSH_URL = "/dashboard?openSupportChat=1";
+
+function supportMessagePreview(text: string): string {
+  return text.replace(/^\[[^\]]+\]\s/, "").trim().slice(0, 180);
+}
+
+function notifyClientSupportChatReply(userId: string, messageText: string): void {
+  const preview = supportMessagePreview(messageText);
+  if (!preview) return;
+  void createUserNotification({
+    userId,
+    type: "support_chat_reply",
+    title: "Nuevo mensaje de soporte",
+    message: preview,
+    pushUrl: SUPPORT_CHAT_PUSH_URL,
+    metadata: { source: "support_chat" },
+  }).catch((err) => {
+    console.warn("[support-chat] No se pudo crear aviso push al cliente:", err);
+  });
+}
 
 function newId(): string {
   return randomBytes(12).toString("hex");
@@ -363,7 +385,9 @@ export async function postAgentSupportMessage(sessionId: string, text: string, a
   }
 
   const prefix = `[${agentEmail.split("@")[0]}] `;
-  await appendMessage(sessionId, "AGENT", `${prefix}${trimmed}`);
+  const agentText = `${prefix}${trimmed}`;
+  await appendMessage(sessionId, "AGENT", agentText);
+  notifyClientSupportChatReply(session.userId, agentText);
 
   if (session.status === SupportChatSessionStatus.HUMAN_REQUESTED) {
     await prisma.supportChatSession.update({
