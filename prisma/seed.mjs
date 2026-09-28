@@ -443,6 +443,65 @@ async function main() {
   await seedCatalog();
   await seedWorkshops();
   await seedClientDemo();
+  await seedTrainingVideos();
+}
+
+/** Capacitaciones demo (YouTube) visibles en el dashboard del cliente. */
+async function seedTrainingVideos() {
+  const defaults = [
+    {
+      id: 'TRN-YT-MANDATORY-DEMO',
+      title: 'Capacitación obligatoria — inducción al vehículo eléctrico',
+      description: 'Video introductorio obligatorio para todos los clientes atoo.',
+      kind: 'MANDATORY',
+      priceCop: null,
+      sortOrder: 0,
+      youtubeUrl: 'https://www.youtube.com/watch?v=DNR3Vj56xaA',
+    },
+    {
+      id: 'TRN-YT-OPTIONAL-DEMO',
+      title: 'Capacitación opcional — conducción avanzada EV',
+      description: 'Contenido opcional de pago. Solicita acceso y confirma el pago con atoo.',
+      kind: 'OPTIONAL',
+      priceCop: 50000,
+      sortOrder: 1,
+      youtubeUrl: 'https://www.youtube.com/watch?v=c2ANsuMXT4o',
+    },
+  ];
+
+  for (const v of defaults) {
+    await prisma.trainingVideo.upsert({
+      where: { id: v.id },
+      update: {
+        title: v.title,
+        description: v.description,
+        kind: v.kind,
+        priceCop: v.priceCop,
+        sortOrder: v.sortOrder,
+        published: true,
+        youtubeUrl: v.youtubeUrl,
+        storedPath: null,
+        mimeType: 'video/youtube',
+        sizeBytes: null,
+        originalName: null,
+      },
+      create: {
+        id: v.id,
+        title: v.title,
+        description: v.description,
+        kind: v.kind,
+        priceCop: v.priceCop,
+        sortOrder: v.sortOrder,
+        published: true,
+        youtubeUrl: v.youtubeUrl,
+        storedPath: null,
+        mimeType: 'video/youtube',
+        sizeBytes: null,
+        originalName: null,
+      },
+    });
+  }
+  console.log('Capacitaciones demo (YouTube) listas.');
 }
 
 main()
