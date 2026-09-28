@@ -103,13 +103,23 @@ trainingVideosRouter.get("/:videoId/stream", async (req, res, next) => {
       return;
     }
 
+    if (video.youtubeUrl) {
+      res.status(400).json({ error: "Este video se reproduce desde YouTube en la app" });
+      return;
+    }
+
+    if (!video.storedPath) {
+      res.status(404).json({ error: "Archivo de video no disponible" });
+      return;
+    }
+
     const absolute = resolveStoredFile(video.storedPath);
     if (!fs.existsSync(absolute)) {
       res.status(404).json({ error: "Archivo de video no disponible" });
       return;
     }
 
-    res.setHeader("Content-Type", video.mimeType);
+    res.setHeader("Content-Type", video.mimeType ?? "video/mp4");
     res.setHeader("Accept-Ranges", "bytes");
     fs.createReadStream(absolute).pipe(res);
   } catch (err) {
