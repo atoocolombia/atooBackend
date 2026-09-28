@@ -15,7 +15,7 @@ const DEFAULT_USERS = [
     id: '1234ASE',
     email: 'asesor@gmail.com',
     password: 'Atoo#Ase9mQ4w',
-    userType: 'ADVISOR',
+    userType: 'ANALYST',
   },
   {
     id: '1234ANL',
@@ -66,7 +66,7 @@ const CATALOG_VEHICLES = [
       'Bajo costo de operación y mantenimiento eléctrico',
       'Tecnología de asistencia al conductor (ADAS)',
       'Pantalla central inteligente con conectividad',
-      'Ideal para plataformas de transporte y movilidad urbana',
+      'Ideal para generar ingresos en la ciudad con bajo costo de operación',
     ],
     features: ['100% eléctrico', 'Carga rápida DC', 'Bluetooth y conectividad', 'Cámara de reversa', 'ADAS de serie'],
     specs: [
@@ -117,11 +117,11 @@ function imageId(vehicleId, index) {
 
 const DEFAULT_LANDING_CONTENT = {
   hero: {
-    badge: 'Tu propio vehículo en 60 meses',
+    badge: 'Genera ingresos con tu vehículo',
     titleBefore: 'Drive Today, ',
     titleHighlight: 'Yours Tomorrow',
     description:
-      'Modelo Rent to Own para conductores de Uber, DiDi y más. Pagos semanales y al finalizar el plazo, ¡el vehículo es tuyo!',
+      'Modelo Rent to Own: trabaja con tu auto eléctrico, paga una cuota semanal accesible y, al completar el plazo, el vehículo es tuyo.',
     primaryButtonText: 'Comenzar Ahora',
     secondaryButtonText: 'Ver Cómo Funciona',
     videoUrl: '/hero/hero-bg.mp4',
@@ -137,19 +137,19 @@ const DEFAULT_LANDING_CONTENT = {
     titleHighlight: 'atoo',
     titleAfter: '?',
     description:
-      'La mejor alternativa para que puedas tener tu propio vehículo mientras generas ingresos.',
+      'Tu propio vehículo mientras generas ingresos, con un plan claro, cuotas semanales y camino a la propiedad.',
     items: [
       {
         icon: 'trending-up',
-        title: 'Incrementa tus Ganancias',
+        title: 'Ingresos con tu vehículo',
         description:
-          'Sin pagos de renta diarios. Todo lo que ganes es tuyo mientras cumples tu cuota semanal.',
+          'Cuota semanal fija. Lo que generes trabajando con tu auto queda para ti.',
         gradient: 'from-[#1A1FE8] to-[#3D42F0]',
       },
       {
         icon: 'shield',
         title: 'Sin Enganche',
-        description: 'Comienza a conducir tu vehículo sin necesidad de desembolso inicial.',
+        description: 'Recibe tu vehículo sin enganche y empieza a generar ingresos desde el primer día.',
         gradient: 'from-cyan-500 to-[#1A1FE8]',
       },
       {
@@ -183,7 +183,7 @@ const DEFAULT_LANDING_CONTENT = {
     titleBefore: '¿Cómo ',
     titleHighlight: 'Funciona',
     titleAfter: '?',
-    description: 'En solo 4 pasos simples estarás manejando tu futuro vehículo',
+    description: 'En 4 pasos tendrás tu vehículo listo para trabajar y generar ingresos',
     ctaText: 'Iniciar Mi Solicitud',
     ctaNote: '⚡ Respuesta en menos de 24 horas',
     items: [
@@ -205,7 +205,8 @@ const DEFAULT_LANDING_CONTENT = {
         number: '03',
         icon: 'car',
         title: 'Entrega',
-        description: 'Elige tu vehículo y firma el contrato. Comienza a conducir el mismo día.',
+        description:
+          'Elige tu vehículo, firma el contrato y empieza a generar ingresos con él el mismo día.',
       },
       {
         number: '04',
@@ -222,8 +223,8 @@ const DEFAULT_LANDING_CONTENT = {
     titleHighlight: 'Yours Tomorrow',
     titleAfter: '?',
     description:
-      'Únete a más de {count} que ya están construyendo su patrimonio mientras trabajan',
-    driverCount: '100 conductores',
+      'Únete a más de {count} que ya generan ingresos con su vehículo y construyen patrimonio',
+    driverCount: '100 socios atoo',
     phoneLabel: 'Llámanos',
     phone: '55 1234 5678',
     emailLabel: 'Escríbenos',
@@ -232,10 +233,23 @@ const DEFAULT_LANDING_CONTENT = {
   },
 };
 
+function landingContentNeedsIncomeCopyRefresh(content) {
+  if (!content || typeof content !== 'object') return true;
+  const hero = content.hero;
+  const desc = hero && typeof hero.description === 'string' ? hero.description : '';
+  return /Uber|DiDi|Beat|plataformas de transporte/i.test(desc);
+}
+
 async function seedCatalog() {
+  const existingLanding = await prisma.landingSettings.findUnique({ where: { id: 'default' } });
+  const landingContent =
+    existingLanding?.content && !landingContentNeedsIncomeCopyRefresh(existingLanding.content)
+      ? existingLanding.content
+      : DEFAULT_LANDING_CONTENT;
+
   await prisma.landingSettings.upsert({
     where: { id: 'default' },
-    update: {},
+    update: { content: landingContent },
     create: { id: 'default', maxVisibleVehicles: 10, content: DEFAULT_LANDING_CONTENT },
   });
 
@@ -438,6 +452,14 @@ async function main() {
       },
     });
     console.log(`Usuario listo: ${user.email} (${user.userType})`);
+  }
+
+  const mergedAdvisors = await prisma.user.updateMany({
+    where: { userType: 'ADVISOR' },
+    data: { userType: 'ANALYST' },
+  });
+  if (mergedAdvisors.count > 0) {
+    console.log(`Perfiles asesor unificados a analista: ${mergedAdvisors.count} usuario(s).`);
   }
 
   await seedCatalog();

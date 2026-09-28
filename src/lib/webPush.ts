@@ -41,7 +41,6 @@ export function dashboardPathForUserType(userType: UserType): string {
     case "ADMIN":
       return "/admin";
     case "ADVISOR":
-      return "/asesor";
     case "ANALYST":
       return "/analista";
     case "WORKSHOP":

@@ -71,11 +71,11 @@ export interface LandingContent {
 export function defaultLandingContent(): LandingContent {
   return {
     hero: {
-      badge: "Tu propio vehículo en 60 meses",
+      badge: "Genera ingresos con tu vehículo",
       titleBefore: "Drive Today, ",
       titleHighlight: "Yours Tomorrow",
       description:
-        "Modelo Rent to Own para conductores de Uber, DiDi y más. Pagos semanales y al finalizar el plazo, ¡el vehículo es tuyo!",
+        "Modelo Rent to Own: trabaja con tu auto eléctrico, paga una cuota semanal accesible y, al completar el plazo, el vehículo es tuyo.",
       primaryButtonText: "Comenzar Ahora",
       secondaryButtonText: "Ver Cómo Funciona",
       videoUrl: "/hero/hero-bg.mp4",
@@ -91,19 +91,19 @@ export function defaultLandingContent(): LandingContent {
       titleHighlight: "atoo",
       titleAfter: "?",
       description:
-        "La mejor alternativa para que puedas tener tu propio vehículo mientras generas ingresos.",
+        "Tu propio vehículo mientras generas ingresos, con un plan claro, cuotas semanales y camino a la propiedad.",
       items: [
         {
           icon: "trending-up",
-          title: "Incrementa tus Ganancias",
+          title: "Ingresos con tu vehículo",
           description:
-            "Sin pagos de renta diarios. Todo lo que ganes es tuyo mientras cumples tu cuota semanal.",
+            "Cuota semanal fija. Lo que generes trabajando con tu auto queda para ti.",
           gradient: "from-[#1A1FE8] to-[#3D42F0]",
         },
         {
           icon: "shield",
           title: "Sin Enganche",
-          description: "Comienza a conducir tu vehículo sin necesidad de desembolso inicial.",
+          description: "Recibe tu vehículo sin enganche y empieza a generar ingresos desde el primer día.",
           gradient: "from-cyan-500 to-[#1A1FE8]",
         },
         {
@@ -137,7 +137,7 @@ export function defaultLandingContent(): LandingContent {
       titleBefore: "¿Cómo ",
       titleHighlight: "Funciona",
       titleAfter: "?",
-      description: "En solo 4 pasos simples estarás manejando tu futuro vehículo",
+      description: "En 4 pasos tendrás tu vehículo listo para trabajar y generar ingresos",
       ctaText: "Iniciar Mi Solicitud",
       ctaNote: "⚡ Respuesta en menos de 24 horas",
       items: [
@@ -159,7 +159,8 @@ export function defaultLandingContent(): LandingContent {
           number: "03",
           icon: "car",
           title: "Entrega",
-          description: "Elige tu vehículo y firma el contrato. Comienza a conducir el mismo día.",
+          description:
+            "Elige tu vehículo, firma el contrato y empieza a generar ingresos con él el mismo día.",
         },
         {
           number: "04",
@@ -175,8 +176,9 @@ export function defaultLandingContent(): LandingContent {
       titleBefore: "¿Listo para ",
       titleHighlight: "Yours Tomorrow",
       titleAfter: "?",
-      description: "Únete a más de {count} que ya están construyendo su patrimonio mientras trabajan",
-      driverCount: "100 conductores",
+      description:
+        "Únete a más de {count} que ya generan ingresos con su vehículo y construyen patrimonio",
+      driverCount: "100 socios atoo",
       phoneLabel: "Llámanos",
       phone: "55 1234 5678",
       emailLabel: "Escríbenos",
