@@ -6,11 +6,14 @@ export const DEPRECATED_GEMINI_MODELS = new Set([
   "gemini-1.5-pro",
   "gemini-1.5-pro-latest",
   "gemini-2.0-flash",
+  /** Retirado para cuentas/API keys nuevas (Google indica gemini-3.5-flash-lite). */
+  "gemini-2.5-flash-lite",
 ]);
 
 export const DEFAULT_GEMINI_MODEL_CHAIN = [
+  "gemini-3.8-flash",
   "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
+  "gemini-3.5-flash-lite",
 ] as const;
 
 export function resolveGeminiModelChain(logPrefix = "[gemini]"): string[] {
@@ -27,7 +30,7 @@ export function resolveGeminiModelChain(logPrefix = "[gemini]"): string[] {
 
   if (primary && DEPRECATED_GEMINI_MODELS.has(primary)) {
     console.warn(
-      `${logPrefix} GEMINI_MODEL="${primary}" ya no está disponible. Usa gemini-2.5-flash en Railway y elimina el valor obsoleto.`,
+      `${logPrefix} GEMINI_MODEL="${primary}" ya no está disponible. Usa gemini-3.8-flash o gemini-2.5-flash en Railway y elimina el valor obsoleto.`,
     );
   }
 
