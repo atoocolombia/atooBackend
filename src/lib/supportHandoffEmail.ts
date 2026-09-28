@@ -25,6 +25,7 @@ export async function sendSupportHandoffEmail(input: {
   clientName: string;
   lastUserMessage: string;
   topicLabel?: string;
+  reminder?: boolean;
 }): Promise<void> {
   const to = resolveSupportHandoffInbox();
   const chatUrl = resolveAdminChatUrl(input.sessionId);
@@ -35,8 +36,12 @@ export async function sendSupportHandoffEmail(input: {
     ? `<p style="margin:0 0 12px;color:#374151;line-height:1.6;"><strong>Tema:</strong> ${escapeHtml(input.topicLabel)}</p>`
     : "";
 
+  const title = input.reminder
+    ? "Recordatorio: cliente sigue esperando atención humana"
+    : "Cliente pide hablar con un humano";
+
   const html = emailLayout(
-    "Cliente pide hablar con un humano",
+    title,
     `<p style="margin:0 0 12px;color:#374151;line-height:1.6;">
       <strong>${safeName}</strong> (${safeEmail}) solicitó atención humana en el chat de ayuda IA.
     </p>
@@ -49,9 +54,11 @@ export async function sendSupportHandoffEmail(input: {
 
   const text = `Cliente ${input.clientName} (${input.clientEmail}) pide hablar con un humano.\n\nÚltimo mensaje: ${input.lastUserMessage}\n\nAbrir chat: ${chatUrl}`;
 
+  const subjectPrefix = input.reminder ? "Recordatorio chat IA" : "Chat IA";
+
   await sendTransactionalEmail({
     to,
-    subject: `[atoo] Chat IA — ${input.clientName} pide atención humana`,
+    subject: `[atoo] ${subjectPrefix} — ${input.clientName} pide atención humana`,
     html,
     text,
   });

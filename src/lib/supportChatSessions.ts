@@ -154,7 +154,11 @@ export async function requestHumanHandoff(input: {
   }
 
   const now = new Date();
-  const needsEmail = !session.humanNotifiedAt;
+  /** Evita ráfagas por doble clic; si vuelven a pedir humano después, sí reenvía correo. */
+  const HANDOFF_EMAIL_DEBOUNCE_MS = 3 * 60 * 1000;
+  const lastNotifiedMs = session.humanNotifiedAt?.getTime() ?? 0;
+  const needsEmail =
+    !session.humanNotifiedAt || now.getTime() - lastNotifiedMs >= HANDOFF_EMAIL_DEBOUNCE_MS;
 
   await prisma.supportChatSession.update({
     where: { id: session.id },
@@ -183,6 +187,7 @@ export async function requestHumanHandoff(input: {
     clientName,
     lastUserMessage: input.triggerMessage,
     topicLabel: topicLabel(session.topic),
+    reminder: Boolean(session.humanNotifiedAt),
   }).catch((err) => {
     console.error("[support-chat] No se pudo enviar correo de escalamiento:", err);
   });
