@@ -4,6 +4,7 @@ import type { Request, Response } from "express";
 import { Router } from "express";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { recordLandingAudit } from "../lib/landingAuditLog.js";
+import { validatePassword } from "../lib/passwordPolicy.js";
 import { prisma } from "../lib/prisma.js";
 
 export const adminWorkshopsRouter = Router();
@@ -98,8 +99,9 @@ adminWorkshopsRouter.post("/", async (req, res, next) => {
       res.status(400).json({ error: "Correo de acceso inválido u obligatorio" });
       return;
     }
-    if (passwordValue.length < 5) {
-      res.status(400).json({ error: "La contraseña debe tener al menos 5 caracteres" });
+    const passwordError = validatePassword(passwordValue);
+    if (passwordError) {
+      res.status(400).json({ error: passwordError });
       return;
     }
 
