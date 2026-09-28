@@ -10,11 +10,11 @@ export const SUPPORT_TOPICS: {
   emoji: string;
   needsVehicle: boolean;
 }[] = [
-  { id: 1, label: "Vehículo", emoji: "🚗", needsVehicle: true },
+  { id: 1, label: "Vehículo", emoji: "🚗", needsVehicle: false },
   { id: 2, label: "Contrato", emoji: "📄", needsVehicle: false },
   { id: 3, label: "Pagos y cuotas", emoji: "💳", needsVehicle: false },
   { id: 4, label: "Seguro", emoji: "🛡️", needsVehicle: false },
-  { id: 5, label: "Emergencia", emoji: "🆘", needsVehicle: true },
+  { id: 5, label: "Emergencia", emoji: "🆘", needsVehicle: false },
 ];
 
 const ALLOWED_EXT = new Set([".pdf", ".txt", ".docx"]);

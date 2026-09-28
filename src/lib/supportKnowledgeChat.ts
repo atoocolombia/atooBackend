@@ -87,7 +87,9 @@ export async function answerSupportKnowledgeQuestion(input: {
   }
 
   if ((input.topic === 1 || input.topic === 5) && !input.vehicle) {
-    throw new Error("Indica si tu vehículo es Nammi o Aeolus.");
+    throw new Error(
+      "Aún no tenemos registrado tu modelo de vehículo en atoo. Escríbenos por WhatsApp para actualizar tus datos.",
+    );
   }
 
   const files = resolveKnowledgeFiles(input.topic, input.vehicle).slice(0, MAX_FILES_PER_REQUEST);
