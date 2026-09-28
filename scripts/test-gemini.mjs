@@ -18,9 +18,11 @@ const DEPRECATED = new Set([
   "gemini-1.5-flash-8b",
   "gemini-1.5-pro",
   "gemini-1.5-pro-latest",
+  "gemini-2.0-flash",
+  "gemini-2.5-flash-lite",
 ]);
 
-const DEFAULT_CHAIN = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"];
+const DEFAULT_CHAIN = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite"];
 
 function resolveChain() {
   const primary = process.env.GEMINI_MODEL?.trim();
