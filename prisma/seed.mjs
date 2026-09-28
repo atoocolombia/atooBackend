@@ -15,7 +15,7 @@ const DEFAULT_USERS = [
     id: '1234ASE',
     email: 'asesor@gmail.com',
     password: 'Atoo#Ase9mQ4w',
-    userType: 'ADVISOR',
+    userType: 'ANALYST',
   },
   {
     id: '1234ANL',
@@ -438,6 +438,14 @@ async function main() {
       },
     });
     console.log(`Usuario listo: ${user.email} (${user.userType})`);
+  }
+
+  const mergedAdvisors = await prisma.user.updateMany({
+    where: { userType: 'ADVISOR' },
+    data: { userType: 'ANALYST' },
+  });
+  if (mergedAdvisors.count > 0) {
+    console.log(`Perfiles asesor unificados a analista: ${mergedAdvisors.count} usuario(s).`);
   }
 
   await seedCatalog();

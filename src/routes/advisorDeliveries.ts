@@ -18,7 +18,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 
 export const advisorDeliveriesRouter = Router();
 
-advisorDeliveriesRouter.use(requireAuth, requireRole("ADVISOR", "ADMIN"));
+advisorDeliveriesRouter.use(requireAuth, requireRole("ANALYST", "ADVISOR", "ADMIN"));
 
 advisorDeliveriesRouter.get("/", async (_req, res, next) => {
   try {
