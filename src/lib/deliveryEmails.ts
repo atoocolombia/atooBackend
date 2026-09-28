@@ -2,7 +2,7 @@ import { Resend } from "resend";
 
 const BRAND_COLOR = "#1A1FE8";
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -10,7 +10,7 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-function emailLayout(title: string, bodyHtml: string): string {
+export function emailLayout(title: string, bodyHtml: string): string {
   return `<!DOCTYPE html>
 <html lang="es">
   <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;color:#111827;">
@@ -42,7 +42,7 @@ function emailLayout(title: string, bodyHtml: string): string {
 </html>`;
 }
 
-function actionButton(label: string, href: string): string {
+export function actionButton(label: string, href: string): string {
   const safeHref = escapeHtml(href);
   const safeLabel = escapeHtml(label);
   return `<p style="margin:24px 0;">
@@ -61,7 +61,8 @@ function normalizeClientEmail(email: string | null | undefined): string {
   return normalized;
 }
 
-function resolveFromAddress(): string {
+/** Remitente de todos los correos transaccionales (activación, entrega, chat IA, etc.). */
+export function resolveFromAddress(): string {
   const from = process.env.RESEND_FROM?.trim() || "soporte@atoo.io";
   if (from.includes("<")) return from;
   return `atoo soporte <${from}>`;

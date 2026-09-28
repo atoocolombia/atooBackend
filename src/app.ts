@@ -18,6 +18,7 @@ import { analystApplicationsRouter, deliveryConfirmationRouter } from "./routes/
 import { analystPaymentsRouter } from "./routes/analystPayments.js";
 import { accountSetupRouter } from "./routes/accountSetup.js";
 import { supportChatRouter } from "./routes/supportChat.js";
+import { adminSupportChatsRouter } from "./routes/adminSupportChats.js";
 import { adminTrainingVideosRouter } from "./routes/adminTrainingVideos.js";
 import { trainingVideosRouter } from "./routes/trainingVideos.js";
 import { listSupportKnowledgeInventory } from "./lib/supportKnowledgePaths.js";
@@ -182,6 +183,7 @@ app.use("/api/v1/admin/landing", requireAuth, requireAdmin, landingAdminRouter);
 app.use("/api/v1/admin/workshops", requireAuth, requireAdmin, adminWorkshopsRouter);
 app.use("/api/v1/admin/inspections", requireAuth, requireAdmin, adminInspectionsRouter);
 app.use("/api/v1/admin/training-videos", requireAuth, requireAdmin, adminTrainingVideosRouter);
+app.use("/api/v1/admin/support-chats", adminSupportChatsRouter);
 
 app.use("/api/v1/advisor/deliveries", advisorDeliveriesRouter);
 app.use("/api/v1/analyst", analystApplicationsRouter);
