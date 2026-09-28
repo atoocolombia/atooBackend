@@ -19,6 +19,8 @@ export async function createUserNotification(input: {
   message: string;
   metadata?: Record<string, unknown>;
   reminderKey?: string;
+  /** Ruta o URL absoluta al abrir la notificación push en la PWA. */
+  pushUrl?: string;
 }): Promise<boolean> {
   try {
     await prisma.userNotification.create({
@@ -44,6 +46,7 @@ export async function createUserNotification(input: {
     await sendWebPushToUser(input.userId, {
       title: input.title,
       body: input.message,
+      url: input.pushUrl,
     });
   } catch (err) {
     console.warn("[web-push] No se pudo enviar el aviso", err);
