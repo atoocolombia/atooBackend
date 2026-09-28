@@ -18,6 +18,8 @@ import { analystApplicationsRouter, deliveryConfirmationRouter } from "./routes/
 import { analystPaymentsRouter } from "./routes/analystPayments.js";
 import { accountSetupRouter } from "./routes/accountSetup.js";
 import { supportChatRouter } from "./routes/supportChat.js";
+import { adminTrainingVideosRouter } from "./routes/adminTrainingVideos.js";
+import { trainingVideosRouter } from "./routes/trainingVideos.js";
 import { listSupportKnowledgeInventory } from "./lib/supportKnowledgePaths.js";
 import { whatsappWebhookRouter } from "./routes/whatsappWebhook.js";
 import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
@@ -179,6 +181,7 @@ app.use("/api/v1/landing", landingRouter);
 app.use("/api/v1/admin/landing", requireAuth, requireAdmin, landingAdminRouter);
 app.use("/api/v1/admin/workshops", requireAuth, requireAdmin, adminWorkshopsRouter);
 app.use("/api/v1/admin/inspections", requireAuth, requireAdmin, adminInspectionsRouter);
+app.use("/api/v1/admin/training-videos", requireAuth, requireAdmin, adminTrainingVideosRouter);
 
 app.use("/api/v1/advisor/deliveries", advisorDeliveriesRouter);
 app.use("/api/v1/analyst", analystApplicationsRouter);
@@ -186,6 +189,7 @@ app.use("/api/v1/analyst/payments", analystPaymentsRouter);
 app.use("/api/v1/delivery-confirm", deliveryConfirmationRouter);
 app.use("/api/v1/account-setup", accountSetupRouter);
 app.use("/api/v1/support/chat", supportChatRouter);
+app.use("/api/v1/training-videos", requireAuth, requireRole(UserType.USER, UserType.ADMIN), trainingVideosRouter);
 
 app.get("/health/support-knowledge", (_req, res) => {
   const inv = listSupportKnowledgeInventory();

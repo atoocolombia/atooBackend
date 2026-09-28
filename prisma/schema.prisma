@@ -121,6 +121,57 @@ model User {
   advisorDeliveries     VehicleDelivery[] @relation("AdvisorDeliveries")
   registeredPayments    ClientPayment[]   @relation("RegisteredPayments")
   clientPayments        ClientPayment[]   @relation("ClientPayments")
+  trainingPurchases     TrainingPurchase[]
+}
+
+enum TrainingVideoKind {
+  MANDATORY
+  OPTIONAL
+}
+
+enum TrainingPurchaseStatus {
+  PENDING
+  APPROVED
+}
+
+/// Videos de capacitación (obligatorios u opcionales de pago).
+model TrainingVideo {
+  id            String             @id
+  title         String
+  description   String?
+  kind          TrainingVideoKind
+  /// Precio en COP; obligatorio si kind = OPTIONAL.
+  priceCop      Int?
+  sortOrder     Int                @default(0)
+  published     Boolean            @default(false)
+  storedPath    String
+  mimeType      String
+  sizeBytes     Int
+  originalName  String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  purchases     TrainingPurchase[]
+
+  @@index([published, sortOrder])
+  @@index([kind, published])
+}
+
+/// Acceso del cliente a capacitaciones opcionales de pago.
+model TrainingPurchase {
+  id              String                 @id
+  userId          String
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trainingVideoId String
+  trainingVideo   TrainingVideo          @relation(fields: [trainingVideoId], references: [id], onDelete: Cascade)
+  amountCop       Int
+  status          TrainingPurchaseStatus @default(PENDING)
+  approvedAt      DateTime?
+  approvedByUserId String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@unique([userId, trainingVideoId])
+  @@index([trainingVideoId, status])
 }
 
 enum ApplicationStatus {
