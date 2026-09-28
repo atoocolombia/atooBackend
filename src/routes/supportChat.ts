@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { answerSupportKnowledgeQuestion } from "../lib/supportKnowledgeChat.js";
+import { resolveSupportVehicleForUser } from "../lib/resolveSupportVehicleForUser.js";
 import {
   listSupportKnowledgeInventory,
   SUPPORT_TOPICS,
@@ -14,6 +15,17 @@ supportChatRouter.use(requireAuth, requireRole("USER", "ADMIN"));
 
 supportChatRouter.get("/topics", (_req, res) => {
   res.json({ topics: SUPPORT_TOPICS });
+});
+
+/** Vehículo del cliente según plan de entrega / datos de entrega. */
+supportChatRouter.get("/context", async (req, res, next) => {
+  try {
+    const userId = req.auth!.id;
+    const ctx = await resolveSupportVehicleForUser(userId);
+    res.json(ctx);
+  } catch (err) {
+    next(err);
+  }
 });
 
 /** Inventario de PDFs/DOCX (diagnóstico, sin contenido). */
@@ -43,6 +55,12 @@ supportChatRouter.post("/ask", async (req, res, next) => {
       return;
     }
 
+    const userId = req.auth!.id;
+    if ((topicNum === 1 || topicNum === 5) && !vehicleTyped) {
+      const resolved = await resolveSupportVehicleForUser(userId);
+      vehicleTyped = resolved.vehicle ?? undefined;
+    }
+
     const profileName = req.auth?.email?.split("@")[0] ?? undefined;
 
     const result = await answerSupportKnowledgeQuestion({
@@ -58,7 +76,7 @@ supportChatRouter.post("/ask", async (req, res, next) => {
     if (
       message.includes("documentos") ||
       message.includes("pregunta") ||
-      message.includes("Nammi") ||
+      message.includes("modelo de vehículo") ||
       message.includes("configurado")
     ) {
       res.status(400).json({ error: message });

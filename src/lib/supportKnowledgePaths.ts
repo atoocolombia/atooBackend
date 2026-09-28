@@ -10,7 +10,7 @@ export const SUPPORT_TOPICS: {
   emoji: string;
   needsVehicle: boolean;
 }[] = [
-  { id: 1, label: "Vehículo", emoji: "🚗", needsVehicle: true },
+  { id: 1, label: "Vehículo", emoji: "🚗", needsVehicle: false },
   { id: 2, label: "Contrato", emoji: "📄", needsVehicle: false },
   { id: 3, label: "Pagos y cuotas", emoji: "💳", needsVehicle: false },
   { id: 4, label: "Seguro", emoji: "🛡️", needsVehicle: false },
@@ -71,9 +71,20 @@ export function resolveKnowledgeFiles(topic: SupportTopicId, vehicle?: SupportVe
     case 4:
       files.push(...listFilesInDir(path.join(root, "seguro")));
       break;
-    case 5:
-      files.push(...listFilesInDir(path.join(root, "emergencia")));
+    case 5: {
+      const emergenciaDir = path.join(root, "emergencia");
+      files.push(...listFilesInDir(emergenciaDir));
+      const vehRoot = path.join(root, "vehiculos");
+      if (vehicle === "nammi" || vehicle === "aeolus") {
+        files.push(...listFilesInDir(path.join(vehRoot, vehicle)));
+        files.push(...listFilesInDir(vehRoot).filter((f) => matchesVehicle(f, vehicle)));
+      } else if (files.length === 0) {
+        for (const sub of ["nammi", "aeolus"] as const) {
+          files.push(...listFilesInDir(path.join(vehRoot, sub)));
+        }
+      }
       break;
+    }
     default:
       break;
   }
