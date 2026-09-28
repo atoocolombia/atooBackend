@@ -4,6 +4,7 @@ import {
   escapeHtml,
   sendTransactionalEmail,
 } from "./deliveryEmails.js";
+import { resolvePublicClientOrigin } from "./clientPublicOrigin.js";
 
 /** Quién recibe el aviso cuando un cliente pide humano (no es el remitente). */
 export function resolveSupportHandoffInbox(): string {
@@ -13,9 +14,7 @@ export function resolveSupportHandoffInbox(): string {
 }
 
 export function resolveAdminChatUrl(sessionId: string): string {
-  const origin =
-    process.env.CLIENT_ORIGIN?.split(",")[0]?.trim() || "https://www.atoo.io";
-  const base = origin.replace(/\/$/, "");
+  const base = resolvePublicClientOrigin();
   return `${base}/admin?supportChat=${encodeURIComponent(sessionId)}`;
 }
 

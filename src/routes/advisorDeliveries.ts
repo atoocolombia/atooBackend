@@ -14,6 +14,7 @@ import {
   parseVehiclePatch,
   validateReadyToComplete,
 } from "../lib/vehicleDeliveryService.js";
+import { resolvePublicClientOrigin } from "../lib/clientPublicOrigin.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 export const advisorDeliveriesRouter = Router();
@@ -168,7 +169,7 @@ advisorDeliveriesRouter.post("/:deliveryId/complete", async (req, res, next) => 
       return;
     }
 
-    const clientOrigin = (process.env.CLIENT_ORIGIN ?? "https://www.atoo.io").split(",")[0]?.trim();
+    const clientOrigin = resolvePublicClientOrigin();
     const now = new Date();
     const isManualEntry = !current.applicationId;
 
