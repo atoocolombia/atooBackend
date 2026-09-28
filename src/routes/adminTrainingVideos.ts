@@ -8,6 +8,7 @@ import {
   createTrainingVideoUploader,
   trainingVideoRelativePath,
 } from "../lib/trainingVideoUpload.js";
+import { normalizeYoutubeWatchUrl } from "../lib/youtubeTrainingVideo.js";
 
 export const adminTrainingVideosRouter = Router();
 
@@ -25,8 +26,10 @@ function mapAdminVideo(row: {
   priceCop: number | null;
   sortOrder: number;
   published: boolean;
-  mimeType: string;
-  sizeBytes: number;
+  youtubeUrl: string | null;
+  storedPath: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
   originalName: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -39,11 +42,46 @@ function mapAdminVideo(row: {
     priceCop: row.priceCop,
     sortOrder: row.sortOrder,
     published: row.published,
+    source: row.youtubeUrl ? ("YOUTUBE" as const) : ("UPLOAD" as const),
+    youtubeUrl: row.youtubeUrl,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     originalName: row.originalName,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function parseTrainingMeta(body: Record<string, unknown>) {
+  const title = String(body.title ?? "").trim();
+  const description = String(body.description ?? "").trim() || null;
+  const kindRaw = String(body.kind ?? "").toUpperCase();
+  const published = body.published === "true" || body.published === true;
+
+  if (!title) {
+    return { error: "El título es obligatorio" as const };
+  }
+  if (kindRaw !== "MANDATORY" && kindRaw !== "OPTIONAL") {
+    return { error: "kind debe ser MANDATORY u OPTIONAL" as const };
+  }
+
+  let priceCop: number | null = null;
+  if (kindRaw === "OPTIONAL") {
+    const price = Number(body.priceCop);
+    if (!Number.isFinite(price) || price <= 0) {
+      return { error: "Indica un precio en COP mayor a 0 para capacitaciones opcionales" as const };
+    }
+    priceCop = Math.round(price);
+  }
+
+  const sortOrder = Number(body.sortOrder);
+  return {
+    title,
+    description,
+    kind: kindRaw as TrainingVideoKind,
+    priceCop,
+    sortOrder: Number.isFinite(sortOrder) ? Math.round(sortOrder) : 0,
+    published,
   };
 }
 
@@ -92,49 +130,42 @@ adminTrainingVideosRouter.post("/", (req, res, next) => {
     }
     try {
       const file = req.file;
-      if (!file) {
-        res.status(400).json({ error: "Falta el archivo de video (campo file)" });
+      const meta = parseTrainingMeta(req.body as Record<string, unknown>);
+      if ("error" in meta) {
+        res.status(400).json({ error: meta.error });
         return;
       }
 
-      const title = String(req.body.title ?? "").trim();
-      const description = String(req.body.description ?? "").trim() || null;
-      const kindRaw = String(req.body.kind ?? "").toUpperCase();
-      const published = req.body.published === "true" || req.body.published === true;
-
-      if (!title) {
-        res.status(400).json({ error: "El título es obligatorio" });
-        return;
-      }
-      if (kindRaw !== "MANDATORY" && kindRaw !== "OPTIONAL") {
-        res.status(400).json({ error: "kind debe ser MANDATORY u OPTIONAL" });
+      const youtubeRaw = String(req.body.youtubeUrl ?? "").trim();
+      const youtubeUrl = youtubeRaw ? normalizeYoutubeWatchUrl(youtubeRaw) : null;
+      if (youtubeRaw && !youtubeUrl) {
+        res.status(400).json({ error: "Enlace de YouTube no válido" });
         return;
       }
 
-      let priceCop: number | null = null;
-      if (kindRaw === "OPTIONAL") {
-        const price = Number(req.body.priceCop);
-        if (!Number.isFinite(price) || price <= 0) {
-          res.status(400).json({ error: "Indica un precio en COP mayor a 0 para capacitaciones opcionales" });
-          return;
-        }
-        priceCop = Math.round(price);
+      if (!file && !youtubeUrl) {
+        res.status(400).json({ error: "Sube un video o indica un enlace de YouTube" });
+        return;
+      }
+      if (file && youtubeUrl) {
+        res.status(400).json({ error: "Usa solo archivo subido o enlace YouTube, no ambos" });
+        return;
       }
 
-      const sortOrder = Number(req.body.sortOrder);
       const row = await prisma.trainingVideo.create({
         data: {
           id: newId(),
-          title,
-          description,
-          kind: kindRaw as TrainingVideoKind,
-          priceCop,
-          sortOrder: Number.isFinite(sortOrder) ? Math.round(sortOrder) : 0,
-          published,
-          storedPath: trainingVideoRelativePath(file.filename),
-          mimeType: file.mimetype,
-          sizeBytes: file.size,
-          originalName: file.originalname,
+          title: meta.title,
+          description: meta.description,
+          kind: meta.kind,
+          priceCop: meta.priceCop,
+          sortOrder: meta.sortOrder,
+          published: meta.published,
+          youtubeUrl,
+          storedPath: file ? trainingVideoRelativePath(file.filename) : null,
+          mimeType: file ? file.mimetype : "video/youtube",
+          sizeBytes: file ? file.size : null,
+          originalName: file ? file.originalname : null,
         },
       });
 
@@ -240,10 +271,12 @@ adminTrainingVideosRouter.delete("/:videoId", async (req, res, next) => {
       return;
     }
     await prisma.trainingVideo.delete({ where: { id: row.id } });
-    try {
-      fs.unlinkSync(resolveStoredFile(row.storedPath));
-    } catch {
-      // archivo ya eliminado
+    if (row.storedPath) {
+      try {
+        fs.unlinkSync(resolveStoredFile(row.storedPath));
+      } catch {
+        // archivo ya eliminado
+      }
     }
     res.status(204).send();
   } catch (err) {

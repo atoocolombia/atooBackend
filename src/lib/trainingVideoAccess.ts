@@ -1,4 +1,5 @@
 import type { TrainingPurchase, TrainingVideo, TrainingVideoKind } from "@prisma/client";
+import { youtubeEmbedUrlFromStored } from "./youtubeTrainingVideo.js";
 
 export type TrainingVideoWithAccess = {
   id: string;
@@ -8,8 +9,11 @@ export type TrainingVideoWithAccess = {
   priceCop: number | null;
   sortOrder: number;
   published: boolean;
-  mimeType: string;
-  sizeBytes: number;
+  source: "UPLOAD" | "YOUTUBE";
+  youtubeUrl: string | null;
+  youtubeEmbedUrl: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
   originalName: string | null;
   createdAt: string;
   updatedAt: string;
@@ -31,6 +35,7 @@ export function mapTrainingVideoForClient(
     canWatch = purchase.status === "APPROVED";
   }
 
+  const embed = youtubeEmbedUrlFromStored(video.youtubeUrl);
   return {
     id: video.id,
     title: video.title,
@@ -39,6 +44,9 @@ export function mapTrainingVideoForClient(
     priceCop: video.priceCop,
     sortOrder: video.sortOrder,
     published: video.published,
+    source: video.youtubeUrl ? "YOUTUBE" : "UPLOAD",
+    youtubeUrl: video.youtubeUrl,
+    youtubeEmbedUrl: canWatch && embed ? embed : null,
     mimeType: video.mimeType,
     sizeBytes: video.sizeBytes,
     originalName: video.originalName,

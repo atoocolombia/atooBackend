@@ -144,9 +144,11 @@ model TrainingVideo {
   priceCop      Int?
   sortOrder     Int                @default(0)
   published     Boolean            @default(false)
-  storedPath    String
-  mimeType      String
-  sizeBytes     Int
+  /// Enlace YouTube (watch/embed/youtu.be). Alternativa a subir archivo.
+  youtubeUrl    String?
+  storedPath    String?
+  mimeType      String?
+  sizeBytes     Int?
   originalName  String?
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
