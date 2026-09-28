@@ -8,27 +8,40 @@ import {
   type GeminiContentPart,
 } from "./geminiChainedContent.js";
 import {
+  extractPdfText,
+  PDF_INLINE_MAX_BYTES,
+  pickRelevantTextExcerpt,
+} from "./extractPdfText.js";
+import {
   resolveKnowledgeFiles,
   SUPPORT_TOPICS,
   type SupportTopicId,
   type SupportVehicle,
 } from "./supportKnowledgePaths.js";
 
-const MAX_FILE_BYTES = 12 * 1024 * 1024;
 const MAX_FILES_PER_REQUEST = 4;
 
-async function fileToParts(filePath: string): Promise<GeminiContentPart[]> {
+async function fileToParts(
+  filePath: string,
+  question: string,
+): Promise<GeminiContentPart[]> {
   const ext = path.extname(filePath).toLowerCase();
   const name = path.basename(filePath);
   const buf = fs.readFileSync(filePath);
-  if (buf.length > MAX_FILE_BYTES) {
-    return [{ text: `[Documento omitido por tamaño: ${name}]` }];
-  }
 
   if (ext === ".pdf") {
+    if (buf.length <= PDF_INLINE_MAX_BYTES) {
+      return [
+        { text: `--- Documento: ${name} ---` },
+        { inlineData: { mimeType: "application/pdf", data: buf.toString("base64") } },
+      ];
+    }
+    const raw = await extractPdfText(buf);
+    const excerpt = pickRelevantTextExcerpt(raw, question);
     return [
-      { text: `--- Documento: ${name} ---` },
-      { inlineData: { mimeType: "application/pdf", data: buf.toString("base64") } },
+      {
+        text: `--- Manual (texto extraído de ${name}, manual grande) ---\n${excerpt || "(no se pudo extraer texto)"}`,
+      },
     ];
   }
 
@@ -73,7 +86,7 @@ export async function answerSupportKnowledgeQuestion(input: {
     throw new Error("La pregunta es demasiado larga.");
   }
 
-  if (input.topic === 1 && !input.vehicle) {
+  if ((input.topic === 1 || input.topic === 5) && !input.vehicle) {
     throw new Error("Indica si tu vehículo es Nammi o Aeolus.");
   }
 
@@ -86,7 +99,7 @@ export async function answerSupportKnowledgeQuestion(input: {
 
   const docParts: GeminiContentPart[] = [];
   for (const file of files) {
-    docParts.push(...(await fileToParts(file)));
+    docParts.push(...(await fileToParts(file, question)));
   }
 
   const sources = files.map((f) => path.basename(f));
@@ -99,6 +112,7 @@ export async function answerSupportKnowledgeQuestion(input: {
     `Categoría actual: ${category}.`,
     "Responde en español, claro y breve (máximo 8 oraciones salvo que pidan pasos).",
     "Usa SOLO la información de los documentos adjuntos. Si no está en los documentos, dilo y sugiere contactar soporte humano.",
+    "En seguridad (agua, incendio, accidente, alta tensión), cita los pasos del manual tal cual: salir del vehículo, no circular en agua profunda, apagar energía si aplica, no rescatar hasta que no haya riesgo eléctrico.",
     "No inventes cifras, fechas, teléfonos ni cláusulas legales.",
     "Si es emergencia (tema 5), prioriza seguridad y pasos inmediatos.",
     "No pidas datos bancarios completos ni contraseñas.",
