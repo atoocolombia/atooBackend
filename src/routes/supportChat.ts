@@ -61,6 +61,7 @@ supportChatRouter.post("/request-human", async (req, res, next) => {
       topic: [1, 2, 3, 4, 5].includes(topicNum) ? topicNum : undefined,
       question: trigger,
       requestHuman: true,
+      fallbackClientEmail: req.auth!.email,
     });
     res.json({
       session: handled.session,
@@ -68,6 +69,11 @@ supportChatRouter.post("/request-human", async (req, res, next) => {
       handoff: true,
     });
   } catch (err) {
+    const message = err instanceof Error ? err.message : "No se pudo solicitar atención humana";
+    if (message.includes("mensaje") || message.includes("Sesión")) {
+      res.status(400).json({ error: message });
+      return;
+    }
     next(err);
   }
 });
@@ -114,6 +120,7 @@ supportChatRouter.post("/ask", async (req, res, next) => {
       topic: topicNum,
       question: q.length >= 1 ? q : "Quiero hablar con un humano",
       requestHuman: Boolean(requestHuman),
+      fallbackClientEmail: req.auth!.email,
     });
 
     if (handled.skipAi) {

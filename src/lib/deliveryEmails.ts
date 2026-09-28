@@ -54,9 +54,17 @@ export function actionButton(label: string, href: string): string {
 }
 
 function normalizeClientEmail(email: string | null | undefined): string {
+  return normalizeAnyEmail(email, "El cliente no tiene un correo válido registrado en la entrega");
+}
+
+/** Destinatarios de avisos internos (escalamiento chat, etc.). */
+export function normalizeAnyEmail(
+  email: string | null | undefined,
+  invalidMessage = "Correo de destino no válido",
+): string {
   const normalized = email?.trim().toLowerCase() ?? "";
   if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-    throw new Error("El cliente no tiene un correo válido registrado en la entrega");
+    throw new Error(invalidMessage);
   }
   return normalized;
 }
@@ -80,7 +88,7 @@ export async function sendTransactionalEmail(input: {
 }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = resolveFromAddress();
-  const to = normalizeClientEmail(input.to);
+  const to = normalizeAnyEmail(input.to);
 
   if (!apiKey) {
     console.warn("[email] Falta RESEND_API_KEY");

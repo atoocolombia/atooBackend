@@ -144,11 +144,14 @@ export async function requestHumanHandoff(input: {
   userId: string;
   sessionId: string;
   triggerMessage: string;
+  fallbackClientEmail?: string;
 }): Promise<{ notified: boolean }> {
   const session = await prisma.supportChatSession.findFirst({
     where: { id: input.sessionId, userId: input.userId },
   });
-  if (!session) throw new Error("Sesión no encontrada");
+  if (!session) {
+    throw new Error("Sesión no encontrada");
+  }
 
   const now = new Date();
   const needsEmail = !session.humanNotifiedAt;
@@ -164,20 +167,27 @@ export async function requestHumanHandoff(input: {
 
   if (!needsEmail) return { notified: false };
 
-  const { email, clientName } = await loadUserForHandoff(input.userId);
+  let clientEmail = input.fallbackClientEmail?.trim().toLowerCase() ?? "";
+  let clientName = clientEmail.split("@")[0] || "Cliente";
   try {
-    await sendSupportHandoffEmail({
-      sessionId: session.id,
-      clientEmail: email,
-      clientName,
-      lastUserMessage: input.triggerMessage,
-      topicLabel: topicLabel(session.topic),
-    });
-    return { notified: true };
+    const loaded = await loadUserForHandoff(input.userId);
+    clientEmail = loaded.email;
+    clientName = loaded.clientName;
   } catch (err) {
-    console.error("[support-chat] No se pudo enviar correo de escalamiento:", err);
-    return { notified: false };
+    console.warn("[support-chat] No se pudo cargar perfil para correo de escalamiento:", err);
   }
+
+  void sendSupportHandoffEmail({
+    sessionId: session.id,
+    clientEmail,
+    clientName,
+    lastUserMessage: input.triggerMessage,
+    topicLabel: topicLabel(session.topic),
+  }).catch((err) => {
+    console.error("[support-chat] No se pudo enviar correo de escalamiento:", err);
+  });
+
+  return { notified: true };
 }
 
 const HANDOFF_ACK =
@@ -192,6 +202,7 @@ export async function handleSupportChatUserMessage(input: {
   topic?: number;
   question: string;
   requestHuman?: boolean;
+  fallbackClientEmail?: string;
 }): Promise<{
   session: SupportChatSessionDto;
   answer: string;
@@ -225,6 +236,7 @@ export async function handleSupportChatUserMessage(input: {
       userId: input.userId,
       sessionId: session.id,
       triggerMessage: question,
+      fallbackClientEmail: input.fallbackClientEmail,
     });
     await appendMessage(session.id, "BOT", HANDOFF_ACK);
     const refreshed = await prisma.supportChatSession.findUniqueOrThrow({
