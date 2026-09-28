@@ -5,12 +5,12 @@ export const DEPRECATED_GEMINI_MODELS = new Set([
   "gemini-1.5-flash-8b",
   "gemini-1.5-pro",
   "gemini-1.5-pro-latest",
+  "gemini-2.0-flash",
 ]);
 
 export const DEFAULT_GEMINI_MODEL_CHAIN = [
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
-  "gemini-2.0-flash",
 ] as const;
 
 export function resolveGeminiModelChain(logPrefix = "[gemini]"): string[] {

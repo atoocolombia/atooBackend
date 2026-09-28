@@ -17,6 +17,8 @@ import { advisorDeliveriesRouter } from "./routes/advisorDeliveries.js";
 import { analystApplicationsRouter, deliveryConfirmationRouter } from "./routes/analystApplications.js";
 import { analystPaymentsRouter } from "./routes/analystPayments.js";
 import { accountSetupRouter } from "./routes/accountSetup.js";
+import { supportChatRouter } from "./routes/supportChat.js";
+import { listSupportKnowledgeInventory } from "./lib/supportKnowledgePaths.js";
 import { whatsappWebhookRouter } from "./routes/whatsappWebhook.js";
 import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
 import { pingGemini } from "./lib/geminiChainedContent.js";
@@ -183,6 +185,15 @@ app.use("/api/v1/analyst", analystApplicationsRouter);
 app.use("/api/v1/analyst/payments", analystPaymentsRouter);
 app.use("/api/v1/delivery-confirm", deliveryConfirmationRouter);
 app.use("/api/v1/account-setup", accountSetupRouter);
+app.use("/api/v1/support/chat", supportChatRouter);
+
+app.get("/health/support-knowledge", (_req, res) => {
+  const inv = listSupportKnowledgeInventory();
+  const counts = Object.fromEntries(
+    Object.entries(inv.topics).map(([k, v]) => [k, (v as string[]).length]),
+  );
+  res.json({ ok: true, root: inv.root, fileCounts: counts });
+});
 
 app.use(errorHandler);
 
