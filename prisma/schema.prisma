@@ -597,6 +597,16 @@ model ClientPayment {
   userId             String?
   user               User?    @relation("ClientPayments", fields: [userId], references: [id], onDelete: SetNull)
   clientName         String?
+  clientEmail        String?
+  clientPhone        String?
+  clientAddress      String?
+  /// CC, CE, NIT, PA (códigos usados en facturación electrónica DIAN)
+  idDocumentType     String   @default("CC")
+  /// transferencia, efectivo, pse, nequi, etc.
+  paymentMethod      String?
+  paymentReference   String?
+  /// Titular del pago si difiere del cliente (ej. familiar que consigna)
+  payerName          String?
   notes              String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
