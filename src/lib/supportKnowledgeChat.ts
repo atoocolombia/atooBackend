@@ -18,6 +18,11 @@ import {
   type SupportTopicId,
   type SupportVehicle,
 } from "./supportKnowledgePaths.js";
+import {
+  SUPPORT_CHAT_GEMINI_IMAGE_MAX_BYTES,
+  SUPPORT_CHAT_GEMINI_VIDEO_MAX_BYTES,
+  supportChatAttachmentKind,
+} from "./supportChatUpload.js";
 
 const MAX_FILES_PER_REQUEST = 4;
 
@@ -72,6 +77,7 @@ export async function answerSupportKnowledgeQuestion(input: {
   vehicle?: SupportVehicle;
   question: string;
   clientName?: string;
+  userMedia?: { absolutePath: string; mimeType: string };
 }): Promise<{ answer: string; sources: string[] }> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
@@ -79,8 +85,8 @@ export async function answerSupportKnowledgeQuestion(input: {
   }
 
   const question = input.question.trim();
-  if (question.length < 3) {
-    throw new Error("Escribe una pregunta un poco más detallada.");
+  if (question.length < 3 && !input.userMedia) {
+    throw new Error("Escribe una pregunta un poco más detallada o adjunta una foto o video.");
   }
   if (question.length > 2000) {
     throw new Error("La pregunta es demasiado larga.");
@@ -118,12 +124,40 @@ export async function answerSupportKnowledgeQuestion(input: {
     "No inventes cifras, fechas, teléfonos ni cláusulas legales.",
     "Si es emergencia (tema 5), prioriza seguridad y pasos inmediatos.",
     "No pidas datos bancarios completos ni contraseñas.",
+    "Si el cliente envía foto o video, descríbelo con cuidado y relaciona con los manuales cuando aplique.",
   ].join("\n");
+
+  const userMediaParts: GeminiContentPart[] = [];
+  if (input.userMedia) {
+    const kind = supportChatAttachmentKind(input.userMedia.mimeType);
+    const buf = fs.readFileSync(input.userMedia.absolutePath);
+    const maxBytes =
+      kind === "video" ? SUPPORT_CHAT_GEMINI_VIDEO_MAX_BYTES : SUPPORT_CHAT_GEMINI_IMAGE_MAX_BYTES;
+    if (kind && buf.length <= maxBytes) {
+      userMediaParts.push({
+        text: `--- ${kind === "video" ? "Video" : "Foto"} enviada por el cliente ---`,
+      });
+      userMediaParts.push({
+        inlineData: { mimeType: input.userMedia.mimeType, data: buf.toString("base64") },
+      });
+    } else {
+      userMediaParts.push({
+        text:
+          "--- El cliente adjuntó un archivo multimedia. Si no puedes verlo, pídele más detalle por texto o sugiere hablar con un humano. ---",
+      });
+    }
+  }
+
+  const questionBlock =
+    question.length >= 1
+      ? question
+      : "El cliente adjuntó una foto o video sin texto. Describe lo que observes y responde según los manuales.";
 
   const parts: GeminiContentPart[] = [
     { text: system },
     ...docParts,
-    { text: `Pregunta del cliente:\n${question}` },
+    ...userMediaParts,
+    { text: `Pregunta del cliente:\n${questionBlock}` },
   ];
 
   try {

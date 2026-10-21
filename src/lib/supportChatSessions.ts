@@ -7,6 +7,13 @@ import { sendSupportHandoffEmail } from "./supportHandoffEmail.js";
 import { SUPPORT_TOPICS } from "./supportKnowledgePaths.js";
 import { buildClientName } from "./mapVehicleDelivery.js";
 import { createUserNotification } from "./userNotifications.js";
+import { supportChatAttachmentKind } from "./supportChatUpload.js";
+import {
+  ATOO_BUSINESS_HOURS_NOTE,
+  BOGOTA_EMERGENCY_CONTACTS,
+  EMERGENCY_SAFETY_STEPS,
+} from "./supportEmergencyContent.js";
+import { sendSupportEmergencyReportEmail } from "./supportEmergencyEmail.js";
 
 const SUPPORT_CHAT_PUSH_URL = "/dashboard?openSupportChat=1";
 
@@ -39,12 +46,32 @@ const OPEN_STATUSES: SupportChatSessionStatus[] = [
   SupportChatSessionStatus.HUMAN_ACTIVE,
 ];
 
+export type SupportChatAttachmentDto = {
+  url: string;
+  mimeType: string;
+  kind: "image" | "video";
+};
+
 export type SupportChatMessageDto = {
   id: string;
   role: "user" | "bot" | "agent";
   text: string;
   createdAt: string;
+  attachment?: SupportChatAttachmentDto | null;
 };
+
+function mapAttachment(message: SupportChatMessage): SupportChatAttachmentDto | null {
+  if (!message.attachmentStoredPath?.trim() || !message.attachmentMimeType?.trim()) {
+    return null;
+  }
+  const kind = supportChatAttachmentKind(message.attachmentMimeType);
+  if (!kind) return null;
+  return {
+    url: `/api/v1/support/chat/messages/${message.id}/attachment`,
+    mimeType: message.attachmentMimeType,
+    kind,
+  };
+}
 
 export type SupportChatSessionDto = {
   id: string;
@@ -52,6 +79,7 @@ export type SupportChatSessionDto = {
   topic: number | null;
   messages: SupportChatMessageDto[];
   updatedAt: string;
+  emergencyReported?: boolean;
 };
 
 function mapRole(role: SupportChatMessage["role"]): SupportChatMessageDto["role"] {
@@ -86,11 +114,13 @@ function mapSession(
     status: mapStatus(session.status),
     topic: session.topic,
     updatedAt: session.updatedAt.toISOString(),
+    emergencyReported: Boolean(session.emergencyReportedAt),
     messages: session.messages.map((m) => ({
       id: m.id,
       role: mapRole(m.role),
       text: m.text,
       createdAt: m.createdAt.toISOString(),
+      attachment: mapAttachment(m),
     })),
   };
 }
@@ -133,10 +163,18 @@ async function appendMessage(
   sessionId: string,
   role: SupportChatMessage["role"],
   text: string,
+  attachment?: { storedPath: string; mimeType: string },
 ): Promise<void> {
   await prisma.$transaction([
     prisma.supportChatMessage.create({
-      data: { id: newId(), sessionId, role, text },
+      data: {
+        id: newId(),
+        sessionId,
+        role,
+        text,
+        attachmentStoredPath: attachment?.storedPath ?? null,
+        attachmentMimeType: attachment?.mimeType ?? null,
+      },
     }),
     prisma.supportChatSession.update({
       where: { id: sessionId },
@@ -230,6 +268,7 @@ export async function handleSupportChatUserMessage(input: {
   question: string;
   requestHuman?: boolean;
   fallbackClientEmail?: string;
+  attachment?: { storedPath: string; mimeType: string };
 }): Promise<{
   session: SupportChatSessionDto;
   answer: string;
@@ -237,8 +276,8 @@ export async function handleSupportChatUserMessage(input: {
   skipAi: boolean;
 }> {
   const question = input.question.trim();
-  if (question.length < 1) {
-    throw new Error("Escribe un mensaje");
+  if (question.length < 1 && !input.attachment) {
+    throw new Error("Escribe un mensaje o adjunta una foto o video");
   }
 
   let session = await getOrCreateSupportChatSession(input.userId, input.sessionId);
@@ -252,17 +291,26 @@ export async function handleSupportChatUserMessage(input: {
     }
   }
 
-  await appendMessage(session.id, "USER", question);
+  const userText =
+    question.length >= 1
+      ? question
+      : input.attachment
+        ? input.attachment.mimeType.startsWith("video/")
+          ? "(Video adjunto)"
+          : "(Foto adjunta)"
+        : "";
+
+  await appendMessage(session.id, "USER", userText, input.attachment);
 
   const current = await prisma.supportChatSession.findUniqueOrThrow({
     where: { id: session.id },
   });
 
-  if (detectSupportHumanRequest(question) || input.requestHuman) {
+  if (detectSupportHumanRequest(userText) || input.requestHuman) {
     await requestHumanHandoff({
       userId: input.userId,
       sessionId: session.id,
-      triggerMessage: question,
+      triggerMessage: userText,
       fallbackClientEmail: input.fallbackClientEmail,
     });
     await appendMessage(session.id, "BOT", HANDOFF_ACK);
@@ -278,7 +326,12 @@ export async function handleSupportChatUserMessage(input: {
     };
   }
 
-  if (current.status !== SupportChatSessionStatus.AI) {
+  const allowAiDuringEmergencyFollowUp =
+    session.topic === 5 &&
+    current.emergencyReportedAt != null &&
+    current.status === SupportChatSessionStatus.HUMAN_REQUESTED;
+
+  if (current.status !== SupportChatSessionStatus.AI && !allowAiDuringEmergencyFollowUp) {
     await appendMessage(session.id, "BOT", HUMAN_QUEUE_ACK);
     const refreshed = await prisma.supportChatSession.findUniqueOrThrow({
       where: { id: session.id },
@@ -344,6 +397,7 @@ export async function listSupportChatSessionsForAdmin(statusFilter?: string) {
     status: mapStatus(row.status),
     topic: row.topic,
     topicLabel: topicLabel(row.topic),
+    emergencyReported: Boolean(row.emergencyReportedAt),
     updatedAt: row.updatedAt.toISOString(),
     clientEmail: row.user.email,
     clientName: buildClientName(row.user.identityExtraction, row.user.email),
@@ -397,6 +451,145 @@ export async function postAgentSupportMessage(sessionId: string, text: string, a
   }
 
   return getSupportChatSessionForAdmin(sessionId);
+}
+
+const EMERGENCY_SITUATION_LABELS: Record<string, string> = {
+  accidente: "Accidente de tránsito",
+  falla: "Falla del vehículo / no arranca",
+  incendio: "Incendio o humo / riesgo de fuego",
+  agua: "Inundación / agua profunda",
+  otro: "Otra emergencia",
+};
+
+function formatEmergencySafetyMessage(): string {
+  const steps = EMERGENCY_SAFETY_STEPS.map((s, i) => `${i + 1}. ${s}`).join("\n");
+  const phones = BOGOTA_EMERGENCY_CONTACTS.map(
+    (c) => `• **${c.name}:** ${c.number} — ${c.detail}`,
+  ).join("\n");
+  return [
+    "🆘 **Prioridad: tu salud y la de los demás**",
+    "",
+    steps,
+    "",
+    "**Contactos de emergencia (Bogotá / Colombia):**",
+    phones,
+    "",
+    ATOO_BUSINESS_HOURS_NOTE,
+  ].join("\n");
+}
+
+export async function registerSupportEmergencyReport(input: {
+  userId: string;
+  sessionId?: string;
+  situation: string;
+  location: string;
+  description: string;
+  clientSafe: boolean;
+  fallbackClientEmail?: string;
+  vehicleLabel?: string;
+}): Promise<SupportChatSessionDto> {
+  const location = input.location.trim();
+  const description = input.description.trim();
+  if (location.length < 3) {
+    throw new Error("Indica la ubicación (barrio, dirección o punto de referencia).");
+  }
+  if (description.length < 10) {
+    throw new Error("Describe qué ocurrió con al menos 10 caracteres.");
+  }
+
+  const situationKey = input.situation.trim().toLowerCase();
+  const situationLabel = EMERGENCY_SITUATION_LABELS[situationKey] ?? input.situation.trim();
+
+  let session = await getOrCreateSupportChatSession(input.userId, input.sessionId);
+  session = await prisma.supportChatSession.update({
+    where: { id: session.id },
+    data: {
+      topic: 5,
+      status: SupportChatSessionStatus.HUMAN_REQUESTED,
+      handoffAt: session.handoffAt ?? new Date(),
+      emergencyReportedAt: new Date(),
+    },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+  });
+
+  const userSummary = [
+    `[Reporte de emergencia] ${situationLabel}`,
+    `Ubicación: ${location}`,
+    input.clientSafe ? "Estado: a salvo" : "Estado: NO confirmó estar a salvo",
+    description,
+  ].join("\n");
+
+  await appendMessage(session.id, "USER", userSummary);
+
+  let clientEmail = input.fallbackClientEmail?.trim().toLowerCase() ?? "";
+  let clientName = clientEmail.split("@")[0] || "Cliente";
+  try {
+    const loaded = await loadUserForHandoff(input.userId);
+    clientEmail = loaded.email;
+    clientName = loaded.clientName;
+  } catch {
+    // fallback email del token
+  }
+
+  void sendSupportEmergencyReportEmail({
+    sessionId: session.id,
+    clientEmail,
+    clientName,
+    location,
+    description,
+    situationLabel,
+    clientSafe: input.clientSafe,
+    vehicleLabel: input.vehicleLabel?.trim() || undefined,
+  }).catch((err) => {
+    console.error("[support-chat] No se pudo enviar correo de emergencia:", err);
+  });
+
+  const ack = [
+    "Recibimos tu reporte. **Ya avisamos al equipo atoo** por correo.",
+    "",
+    "Los trámites con la empresa (seguro, grúa, documentos) se atienden en **horario laboral** (lun–vie 8:00–18:00, Colombia).",
+    "",
+    "Mientras tanto, **puedes seguir preguntando a la IA** sobre seguridad o el manual de emergencia.",
+    "",
+    formatEmergencySafetyMessage(),
+  ].join("\n");
+
+  await appendMessage(session.id, "BOT", ack);
+
+  const refreshed = await prisma.supportChatSession.findUniqueOrThrow({
+    where: { id: session.id },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+  });
+  return mapSession(refreshed);
+}
+
+export function getSupportEmergencyInfoPayload() {
+  return {
+    safetySteps: [...EMERGENCY_SAFETY_STEPS],
+    contacts: [...BOGOTA_EMERGENCY_CONTACTS],
+    businessHoursNote: ATOO_BUSINESS_HOURS_NOTE,
+  };
+}
+
+export async function getSupportChatMessageAttachmentForDownload(input: {
+  messageId: string;
+  userId: string;
+  isAdmin: boolean;
+}): Promise<{ storedPath: string; mimeType: string } | null> {
+  const row = await prisma.supportChatMessage.findUnique({
+    where: { id: input.messageId },
+    include: { session: { select: { userId: true } } },
+  });
+  if (!row?.attachmentStoredPath?.trim() || !row.attachmentMimeType?.trim()) {
+    return null;
+  }
+  if (!input.isAdmin && row.session.userId !== input.userId) {
+    throw new Error("No autorizado");
+  }
+  return {
+    storedPath: row.attachmentStoredPath.trim(),
+    mimeType: row.attachmentMimeType.trim(),
+  };
 }
 
 export async function updateSupportChatSessionStatus(
