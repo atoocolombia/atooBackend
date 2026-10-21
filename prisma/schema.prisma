@@ -442,14 +442,18 @@ model WorkshopAvailabilitySlot {
 
 /// Plan de revisión técnico-mecánica asignado al entregar el vehículo (solo lectura para el cliente).
 model ClientVehiclePlan {
-  userId              String   @id
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  vehicleName         String
-  vin                 String?
-  deliveredAt         DateTime
-  nextInspectionDueAt DateTime
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  userId                String   @id
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleName           String
+  vin                   String?
+  deliveredAt           DateTime
+  nextInspectionDueAt   DateTime
+  /// Cuota pactada (COP) para progreso del plan Rent to Own.
+  installmentAmountCop  Int?
+  /// Número total de cuotas del plan.
+  installmentCount      Int?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 /// Citas de revisión: planificadas por el negocio o solicitadas por el cliente.
