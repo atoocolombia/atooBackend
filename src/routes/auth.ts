@@ -8,6 +8,7 @@ import {
 } from "../lib/authTokens.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { mapUserToProfile } from "../lib/userProfile.js";
+import { buildClientPaymentSummary } from "../lib/clientPaymentSummary.js";
 import { validatePassword } from "../lib/passwordPolicy.js";
 import { prisma } from "../lib/prisma.js";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
@@ -220,6 +221,16 @@ authRouter.get("/me", optionalAuth, async (req, res, next) => {
 authRouter.post("/logout", (_req, res) => {
   clearAuthCookie(res);
   res.status(204).send();
+});
+
+/** Resumen de pagos del usuario autenticado (portal cliente). */
+authRouter.get("/me/payment-summary", requireAuth, async (req, res, next) => {
+  try {
+    const summary = await buildClientPaymentSummary(req.auth!.id);
+    res.json({ summary });
+  } catch (err) {
+    next(err);
+  }
 });
 
 authRouter.get("/profile", requireAuth, async (req, res, next) => {

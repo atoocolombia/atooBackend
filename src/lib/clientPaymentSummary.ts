@@ -1,6 +1,14 @@
 import type { ClientPayment } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { normalizeIdDocumentNumber } from "./clientPayments.js";
 import { prisma } from "./prisma.js";
+
+function isMissingPaymentsSchema(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    (err.code === "P2021" || err.code === "P2022")
+  );
+}
 
 const LEGACY_PLAN_WEEKS = 260;
 const LEGACY_WEEKLY_COP = 207_000;
@@ -113,32 +121,44 @@ async function linkOrphanPaymentsToUser(userId: string, email: string, idDoc: st
 }
 
 export async function buildClientPaymentSummary(userId: string): Promise<ClientPaymentSummary> {
-  const user = await prisma.user.findUnique({
+  let user = await prisma.user.findUnique({
     where: { id: userId },
     include: { identityExtraction: true, vehiclePlan: true },
+  }).catch(async (err) => {
+    if (!isMissingPaymentsSchema(err)) throw err;
+    return prisma.user.findUnique({
+      where: { id: userId },
+      include: { identityExtraction: true },
+    });
   });
 
   const idDoc = normalizeIdDocumentNumber(user?.identityExtraction?.idDocumentNumber ?? "");
   const email = user?.email?.trim() ?? "";
 
-  await linkOrphanPaymentsToUser(userId, email, idDoc);
+  let payments: ClientPayment[] = [];
+  try {
+    await linkOrphanPaymentsToUser(userId, email, idDoc);
 
-  const orFilters: Array<
-    { userId: string } | { idDocumentNumber: string } | { clientEmail: { equals: string; mode: "insensitive" } }
-  > = [{ userId }];
-  if (idDoc.length >= 5) {
-    orFilters.push({ idDocumentNumber: idDoc });
+    const orFilters: Array<
+      { userId: string } | { idDocumentNumber: string } | { clientEmail: { equals: string; mode: "insensitive" } }
+    > = [{ userId }];
+    if (idDoc.length >= 5) {
+      orFilters.push({ idDocumentNumber: idDoc });
+    }
+    if (email) {
+      orFilters.push({ clientEmail: { equals: email, mode: "insensitive" } });
+    }
+
+    payments = await prisma.clientPayment.findMany({
+      where: { OR: orFilters },
+      orderBy: { paidAt: "desc" },
+    });
+  } catch (err) {
+    if (!isMissingPaymentsSchema(err)) throw err;
+    payments = [];
   }
-  if (email) {
-    orFilters.push({ clientEmail: { equals: email, mode: "insensitive" } });
-  }
 
-  const payments = await prisma.clientPayment.findMany({
-    where: { OR: orFilters },
-    orderBy: { paidAt: "desc" },
-  });
-
-  const plan = user?.vehiclePlan;
+  const plan = user && "vehiclePlan" in user ? user.vehiclePlan : null;
   let installmentAmountCop = plan?.installmentAmountCop ?? null;
   let installmentCount = plan?.installmentCount ?? null;
 
