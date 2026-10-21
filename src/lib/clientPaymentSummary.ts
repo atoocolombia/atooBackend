@@ -2,9 +2,10 @@ import type { ClientPayment } from "@prisma/client";
 import { normalizeIdDocumentNumber } from "./clientPayments.js";
 import { prisma } from "./prisma.js";
 
-const PLAN_WEEKS = 260;
-const DEFAULT_WEEKLY_COP = 207_000;
+const LEGACY_PLAN_WEEKS = 260;
+const LEGACY_WEEKLY_COP = 207_000;
 const DEPOSIT_THRESHOLD_COP = 1_500_000;
+const INSTALLMENT_DUE_DAYS = 30;
 
 export type ClientPortalPaymentItem = {
   id: string;
@@ -30,6 +31,11 @@ export type ClientPaymentSummary = {
   depositPaidAt: string | null;
   depositAmountCop: number | null;
   history: ClientPortalPaymentItem[];
+  /** Plan por cuotas fijas (cada pago registrado = 1 cuota). */
+  installmentPlan: boolean;
+  installmentsPaid: number;
+  planInstallments: number;
+  remainingInstallments: number;
 };
 
 function paymentMethodLabel(method: string | null): string {
@@ -46,20 +52,29 @@ function paymentMethodLabel(method: string | null): string {
   return labels[method] ?? method;
 }
 
-function classifyPayment(amountCop: number): ClientPortalPaymentItem["kind"] {
+function classifyPayment(
+  amountCop: number,
+  installmentAmountCop: number,
+  installmentPlan: boolean,
+): ClientPortalPaymentItem["kind"] {
+  if (installmentPlan) return "weekly";
   if (amountCop >= DEPOSIT_THRESHOLD_COP) return "deposit";
-  if (amountCop >= DEFAULT_WEEKLY_COP * 0.5 && amountCop <= DEFAULT_WEEKLY_COP * 2.5) return "weekly";
+  if (amountCop >= installmentAmountCop * 0.5 && amountCop <= installmentAmountCop * 2.5) return "weekly";
   return "other";
 }
 
-function mapPortalPayment(row: ClientPayment): ClientPortalPaymentItem {
+function mapPortalPayment(
+  row: ClientPayment,
+  installmentAmountCop: number,
+  installmentPlan: boolean,
+): ClientPortalPaymentItem {
   return {
     id: row.id,
     amountCop: row.amountCop,
     paidAt: row.paidAt.toISOString(),
     paymentMethod: row.paymentMethod,
     paymentMethodLabel: paymentMethodLabel(row.paymentMethod),
-    kind: classifyPayment(row.amountCop),
+    kind: classifyPayment(row.amountCop, installmentAmountCop, installmentPlan),
   };
 }
 
@@ -100,7 +115,7 @@ async function linkOrphanPaymentsToUser(userId: string, email: string, idDoc: st
 export async function buildClientPaymentSummary(userId: string): Promise<ClientPaymentSummary> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { identityExtraction: true },
+    include: { identityExtraction: true, vehiclePlan: true },
   });
 
   const idDoc = normalizeIdDocumentNumber(user?.identityExtraction?.idDocumentNumber ?? "");
@@ -123,22 +138,56 @@ export async function buildClientPaymentSummary(userId: string): Promise<ClientP
     orderBy: { paidAt: "desc" },
   });
 
-  const weeklyPaymentCop = DEFAULT_WEEKLY_COP;
+  const plan = user?.vehiclePlan;
+  const installmentPlan = Boolean(
+    plan?.installmentAmountCop != null &&
+      plan.installmentAmountCop > 0 &&
+      plan.installmentCount != null &&
+      plan.installmentCount > 0,
+  );
+
+  const weeklyPaymentCop = installmentPlan
+    ? plan!.installmentAmountCop!
+    : LEGACY_WEEKLY_COP;
+  const planInstallments = installmentPlan ? plan!.installmentCount! : LEGACY_PLAN_WEEKS;
+
+  const history = payments.map((row) => mapPortalPayment(row, weeklyPaymentCop, installmentPlan));
+  const installmentPayments = history.filter((p) => p.kind !== "deposit");
+
   const totalPaidCop = payments.reduce((sum, row) => sum + row.amountCop, 0);
-  const weeksRecognized = weeklyPaymentCop > 0 ? Math.floor(totalPaidCop / weeklyPaymentCop) : 0;
-  const progressPercent = Math.min(100, Math.round((weeksRecognized / PLAN_WEEKS) * 100));
-  const remainingWeeks = Math.max(0, PLAN_WEEKS - weeksRecognized);
+
+  let installmentsPaid: number;
+  let progressPercent: number;
+  let remainingInstallments: number;
+
+  if (installmentPlan) {
+    installmentsPaid = installmentPayments.length;
+    progressPercent =
+      planInstallments > 0 ? Math.min(100, Math.round((installmentsPaid / planInstallments) * 100)) : 0;
+    remainingInstallments = Math.max(0, planInstallments - installmentsPaid);
+  } else {
+    installmentsPaid =
+      weeklyPaymentCop > 0 ? Math.floor(totalPaidCop / weeklyPaymentCop) : 0;
+    progressPercent =
+      planInstallments > 0 ? Math.min(100, Math.round((installmentsPaid / planInstallments) * 100)) : 0;
+    remainingInstallments = Math.max(0, planInstallments - installmentsPaid);
+  }
+
+  const weeksRecognized = installmentsPaid;
+  const remainingWeeks = remainingInstallments;
 
   const lastPayment = payments[0] ?? null;
-  const nextPaymentDueAt = lastPayment ? addDays(lastPayment.paidAt, 7) : null;
+  const dueIntervalDays = installmentPlan ? INSTALLMENT_DUE_DAYS : 7;
+  const nextPaymentDueAt =
+    lastPayment && installmentsPaid < planInstallments ? addDays(lastPayment.paidAt, dueIntervalDays) : null;
 
-  const depositPayment = payments.find((p) => p.amountCop >= DEPOSIT_THRESHOLD_COP) ?? null;
-
-  const history = payments.map(mapPortalPayment);
+  const depositPayment = installmentPlan
+    ? null
+    : (payments.find((p) => p.amountCop >= DEPOSIT_THRESHOLD_COP) ?? null);
 
   return {
     weeklyPaymentCop,
-    planWeeks: PLAN_WEEKS,
+    planWeeks: planInstallments,
     totalPaidCop,
     paymentsCount: payments.length,
     weeksRecognized,
@@ -151,5 +200,9 @@ export async function buildClientPaymentSummary(userId: string): Promise<ClientP
     depositPaidAt: depositPayment?.paidAt.toISOString() ?? null,
     depositAmountCop: depositPayment?.amountCop ?? null,
     history,
+    installmentPlan,
+    installmentsPaid,
+    planInstallments,
+    remainingInstallments,
   };
 }

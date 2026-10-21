@@ -419,6 +419,8 @@ async function seedClientDemo() {
       vin: 'LNBM2EV3XDEMO1234',
       deliveredAt,
       nextInspectionDueAt,
+      installmentAmountCop: 700_000,
+      installmentCount: 26,
     },
     create: {
       userId: client.id,
@@ -426,6 +428,8 @@ async function seedClientDemo() {
       vin: 'LNBM2EV3XDEMO1234',
       deliveredAt,
       nextInspectionDueAt,
+      installmentAmountCop: 700_000,
+      installmentCount: 26,
     },
   });
 
