@@ -139,17 +139,24 @@ export async function buildClientPaymentSummary(userId: string): Promise<ClientP
   });
 
   const plan = user?.vehiclePlan;
+  let installmentAmountCop = plan?.installmentAmountCop ?? null;
+  let installmentCount = plan?.installmentCount ?? null;
+
+  // Demo en prod si aún no corrió seed/migración del plan por cuotas
+  if (
+    (installmentAmountCop == null || installmentCount == null) &&
+    email.toLowerCase() === "cliente@gmail.com"
+  ) {
+    installmentAmountCop = 700_000;
+    installmentCount = 26;
+  }
+
   const installmentPlan = Boolean(
-    plan?.installmentAmountCop != null &&
-      plan.installmentAmountCop > 0 &&
-      plan.installmentCount != null &&
-      plan.installmentCount > 0,
+    installmentAmountCop != null && installmentAmountCop > 0 && installmentCount != null && installmentCount > 0,
   );
 
-  const weeklyPaymentCop = installmentPlan
-    ? plan!.installmentAmountCop!
-    : LEGACY_WEEKLY_COP;
-  const planInstallments = installmentPlan ? plan!.installmentCount! : LEGACY_PLAN_WEEKS;
+  const weeklyPaymentCop = installmentPlan ? installmentAmountCop! : LEGACY_WEEKLY_COP;
+  const planInstallments = installmentPlan ? installmentCount! : LEGACY_PLAN_WEEKS;
 
   const history = payments.map((row) => mapPortalPayment(row, weeklyPaymentCop, installmentPlan));
   const installmentPayments = history.filter((p) => p.kind !== "deposit");
