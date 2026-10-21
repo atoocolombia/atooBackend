@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { Router } from "express";
+import { buildClientPaymentSummary } from "../lib/clientPaymentSummary.js";
 import { getClientAccessState } from "../lib/clientAccess.js";
 import { mapUserToProfile } from "../lib/userProfile.js";
 import { prisma } from "../lib/prisma.js";
@@ -45,6 +46,16 @@ usersRouter.get("/:userId/client-access", async (req: Request, res: Response, ne
   try {
     const access = await getClientAccessState(paramUserId(req));
     res.json(access);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Resumen de pagos del portal cliente (misma respuesta que /client/payments/summary). */
+usersRouter.get("/:userId/payment-summary", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const summary = await buildClientPaymentSummary(paramUserId(req));
+    res.json({ summary });
   } catch (err) {
     next(err);
   }
