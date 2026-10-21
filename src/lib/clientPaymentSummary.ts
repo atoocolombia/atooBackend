@@ -81,6 +81,22 @@ function computePaymentStatus(nextDueAt: Date | null): ClientPaymentSummary["pay
   return "current";
 }
 
+async function linkOrphanPaymentsToUser(userId: string, email: string, idDoc: string): Promise<void> {
+  const emailFilter = email.trim();
+  if (!emailFilter && idDoc.length < 5) return;
+
+  await prisma.clientPayment.updateMany({
+    where: {
+      userId: null,
+      OR: [
+        ...(emailFilter ? [{ clientEmail: { equals: emailFilter, mode: "insensitive" as const } }] : []),
+        ...(idDoc.length >= 5 ? [{ idDocumentNumber: idDoc }] : []),
+      ],
+    },
+    data: { userId },
+  });
+}
+
 export async function buildClientPaymentSummary(userId: string): Promise<ClientPaymentSummary> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -88,9 +104,18 @@ export async function buildClientPaymentSummary(userId: string): Promise<ClientP
   });
 
   const idDoc = normalizeIdDocumentNumber(user?.identityExtraction?.idDocumentNumber ?? "");
-  const orFilters: Array<{ userId: string } | { idDocumentNumber: string }> = [{ userId }];
+  const email = user?.email?.trim() ?? "";
+
+  await linkOrphanPaymentsToUser(userId, email, idDoc);
+
+  const orFilters: Array<
+    { userId: string } | { idDocumentNumber: string } | { clientEmail: { equals: string; mode: "insensitive" } }
+  > = [{ userId }];
   if (idDoc.length >= 5) {
     orFilters.push({ idDocumentNumber: idDoc });
+  }
+  if (email) {
+    orFilters.push({ clientEmail: { equals: email, mode: "insensitive" } });
   }
 
   const payments = await prisma.clientPayment.findMany({

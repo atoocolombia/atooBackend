@@ -65,6 +65,44 @@ function lookupFromDelivery(d: {
   };
 }
 
+export async function resolveClientForPayment(input: {
+  idDocumentNumber: string;
+  clientEmail?: string;
+}): Promise<{
+  userId: string | null;
+  clientName: string | null;
+  clientEmail: string | null;
+  clientPhone: string | null;
+  clientAddress: string | null;
+  idDocumentType: string;
+}> {
+  const fromDoc = await resolveClientByIdDocument(input.idDocumentNumber);
+  if (fromDoc.userId) return fromDoc;
+
+  const email = input.clientEmail?.trim();
+  if (!email) return fromDoc;
+
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } },
+    include: { identityExtraction: true, workAddressExtraction: true },
+  });
+  if (!user) return fromDoc;
+
+  const name = buildName(
+    user.identityExtraction?.firstName,
+    user.identityExtraction?.lastName,
+    user.email.split("@")[0],
+  );
+  return {
+    userId: user.id,
+    clientName: fromDoc.clientName ?? name,
+    clientEmail: user.email,
+    clientPhone: fromDoc.clientPhone ?? user.phone,
+    clientAddress: fromDoc.clientAddress ?? user.workAddressExtraction?.utilityServiceAddress ?? null,
+    idDocumentType: fromDoc.idDocumentType,
+  };
+}
+
 export async function resolveClientByIdDocument(idDocumentNumber: string): Promise<{
   userId: string | null;
   clientName: string | null;
@@ -231,13 +269,41 @@ export async function searchClientsForPayment(query: string, limit = 10): Promis
     },
     take: limit,
   });
+  const usersByEmail = await prisma.user.findMany({
+    where: {
+      OR: [
+        { email: { contains: trimmed, mode: "insensitive" } },
+        { identityExtraction: { firstName: { contains: trimmed, mode: "insensitive" } } },
+        { identityExtraction: { lastName: { contains: trimmed, mode: "insensitive" } } },
+      ],
+    },
+    include: { identityExtraction: true, workAddressExtraction: true },
+    take: limit,
+  });
+  for (const u of usersByEmail) {
+    const doc = normalizeIdDocumentNumber(u.identityExtraction?.idDocumentNumber ?? "");
+    const key = doc || `user:${u.id}`;
+    if (byDoc.has(key)) continue;
+    byDoc.set(key, {
+      userId: u.id,
+      idDocumentNumber: doc || (normalizedDoc.length >= 5 ? normalizedDoc : ""),
+      idDocumentType: "CC",
+      clientName: buildName(u.identityExtraction?.firstName, u.identityExtraction?.lastName, u.email.split("@")[0]),
+      email: u.email,
+      phone: u.phone,
+      address: u.workAddressExtraction?.utilityServiceAddress ?? null,
+      source: "user",
+    });
+  }
+
   for (const id of identitiesByName) {
     const doc = normalizeIdDocumentNumber(id.idDocumentNumber ?? "");
-    if (!doc || byDoc.has(doc)) continue;
     const u = id.user;
-    byDoc.set(doc, {
+    const key = doc || `user:${u.id}`;
+    if (byDoc.has(key)) continue;
+    byDoc.set(key, {
       userId: u.id,
-      idDocumentNumber: doc,
+      idDocumentNumber: doc || "",
       idDocumentType: "CC",
       clientName: buildName(id.firstName, id.lastName, u.email.split("@")[0]),
       email: u.email,

@@ -4,6 +4,7 @@ import {
   mapClientPayment,
   normalizeIdDocumentNumber,
   resolveClientByIdDocument,
+  resolveClientForPayment,
   searchClientsForPayment,
 } from "../lib/clientPayments.js";
 import { prisma } from "../lib/prisma.js";
@@ -143,9 +144,13 @@ analystPaymentsRouter.post("/", async (req, res, next) => {
       return;
     }
 
-    const linked = await resolveClientByIdDocument(normalizedId);
+    const emailFromBody = clientEmail?.trim() || null;
+    const linked = await resolveClientForPayment({
+      idDocumentNumber: normalizedId,
+      clientEmail: emailFromBody ?? undefined,
+    });
     const resolvedName = clientName?.trim() || linked.clientName;
-    const resolvedEmail = clientEmail?.trim() || linked.clientEmail;
+    const resolvedEmail = emailFromBody || linked.clientEmail;
     const resolvedPhone = clientPhone?.trim() || linked.clientPhone;
     const resolvedAddress = clientAddress?.trim() || linked.clientAddress;
 

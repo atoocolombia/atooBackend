@@ -431,8 +431,13 @@ async function seedClientDemo() {
 
   await prisma.userIdentityExtraction.upsert({
     where: { userId: client.id },
-    update: { firstName: 'Cliente', lastName: 'Demo' },
-    create: { userId: client.id, firstName: 'Cliente', lastName: 'Demo' },
+    update: { firstName: 'Cliente', lastName: 'Demo', idDocumentNumber: '1012345678' },
+    create: {
+      userId: client.id,
+      firstName: 'Cliente',
+      lastName: 'Demo',
+      idDocumentNumber: '1012345678',
+    },
   });
 
   console.log('Cliente demo listo: cliente@gmail.com');
