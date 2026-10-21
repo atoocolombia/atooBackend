@@ -4,7 +4,9 @@ import { Router } from "express";
 import { authenticateWithGoogle } from "../lib/authenticateWithGoogle.js";
 import {
   clearAuthCookie,
+  publicUserDto,
   sendAuthSession,
+  setAuthCookie,
 } from "../lib/authTokens.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { mapUserToProfile } from "../lib/userProfile.js";
@@ -212,6 +214,29 @@ authRouter.get("/me", optionalAuth, async (req, res, next) => {
       res.status(401).json({ error: "Sesión inválida" });
       return;
     }
+
+    const includePayments =
+      req.query.includePayments === "1" || req.query.includePayments === "true";
+
+    if (
+      includePayments &&
+      (user.userType === UserType.USER || user.userType === UserType.ADMIN)
+    ) {
+      const token = setAuthCookie(res, user);
+      const payload: Record<string, unknown> = {
+        ...publicUserDto(user),
+        token,
+      };
+      try {
+        payload.paymentSummary = await buildClientPaymentSummary(user.id);
+      } catch (err) {
+        console.error("[auth/me] paymentSummary", err);
+        payload.paymentSummary = null;
+      }
+      res.status(200).json(payload);
+      return;
+    }
+
     sendAuthSession(res, user, 200);
   } catch (err) {
     next(err);

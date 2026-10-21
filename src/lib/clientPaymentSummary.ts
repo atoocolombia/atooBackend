@@ -104,20 +104,114 @@ function computePaymentStatus(nextDueAt: Date | null): ClientPaymentSummary["pay
   return "current";
 }
 
-async function linkOrphanPaymentsToUser(userId: string, email: string, idDoc: string): Promise<void> {
-  const emailFilter = email.trim();
-  if (!emailFilter && idDoc.length < 5) return;
+async function linkOrphanPaymentsByDocument(userId: string, idDoc: string): Promise<void> {
+  if (idDoc.length < 5) return;
+  await prisma.clientPayment.updateMany({
+    where: { userId: null, idDocumentNumber: idDoc },
+    data: { userId },
+  });
+}
 
+async function linkOrphanPaymentsByEmail(userId: string, email: string): Promise<void> {
+  const emailFilter = email.trim();
+  if (!emailFilter) return;
   await prisma.clientPayment.updateMany({
     where: {
       userId: null,
-      OR: [
-        ...(emailFilter ? [{ clientEmail: { equals: emailFilter, mode: "insensitive" as const } }] : []),
-        ...(idDoc.length >= 5 ? [{ idDocumentNumber: idDoc }] : []),
-      ],
+      clientEmail: { equals: emailFilter, mode: "insensitive" },
     },
     data: { userId },
   });
+}
+
+async function loadClientPaymentsForSummary(
+  userId: string,
+  idDoc: string,
+  email: string,
+): Promise<ClientPayment[]> {
+  try {
+    await linkOrphanPaymentsByDocument(userId, idDoc);
+    try {
+      await linkOrphanPaymentsByEmail(userId, email);
+    } catch (err) {
+      if (!isMissingPaymentsSchema(err)) throw err;
+    }
+
+    const orFilters: Array<
+      { userId: string } | { idDocumentNumber: string } | { clientEmail: { equals: string; mode: "insensitive" } }
+    > = [{ userId }];
+    if (idDoc.length >= 5) {
+      orFilters.push({ idDocumentNumber: idDoc });
+    }
+    if (email) {
+      orFilters.push({ clientEmail: { equals: email, mode: "insensitive" } });
+    }
+
+    return await prisma.clientPayment.findMany({
+      where: { OR: orFilters },
+      orderBy: { paidAt: "desc" },
+    });
+  } catch (err) {
+    if (!isMissingPaymentsSchema(err)) throw err;
+  }
+
+  try {
+    await linkOrphanPaymentsByDocument(userId, idDoc);
+    return await prisma.clientPayment.findMany({
+      where: {
+        OR: [{ userId }, ...(idDoc.length >= 5 ? [{ idDocumentNumber: idDoc }] : [])],
+      },
+      orderBy: { paidAt: "desc" },
+    });
+  } catch (err) {
+    if (!isMissingPaymentsSchema(err)) throw err;
+  }
+
+  if (idDoc.length < 5) {
+    const byUser = await prisma.$queryRaw<
+      Array<{ id: string; amountCop: number; paidAt: Date; paymentMethod: string | null }>
+    >`SELECT id, "amountCop", "paidAt", NULL::text AS "paymentMethod" FROM "ClientPayment" WHERE "userId" = ${userId} ORDER BY "paidAt" DESC`;
+    return byUser.map((row) => ({
+      ...row,
+      idDocumentNumber: "",
+      idDocumentType: "CC",
+      registeredByUserId: "",
+      userId,
+      clientName: null,
+      clientEmail: null,
+      clientPhone: null,
+      clientAddress: null,
+      paymentReference: null,
+      payerName: null,
+      notes: null,
+      createdAt: row.paidAt,
+      updatedAt: row.paidAt,
+    })) as ClientPayment[];
+  }
+
+  const rows = await prisma.$queryRaw<
+    Array<{ id: string; amountCop: number; paidAt: Date; paymentMethod: string | null; idDocumentNumber: string }>
+  >`SELECT id, "amountCop", "paidAt", NULL::text AS "paymentMethod", "idDocumentNumber" FROM "ClientPayment" WHERE "userId" = ${userId} OR "idDocumentNumber" = ${idDoc} ORDER BY "paidAt" DESC`;
+
+  return rows.map((row) => ({
+    id: row.id,
+    amountCop: row.amountCop,
+    paidAt: row.paidAt,
+    paymentMethod: row.paymentMethod,
+    idDocumentNumber: row.idDocumentNumber,
+    idDocumentType: "CC",
+    registeredByUserId: "",
+    userId,
+    clientName: null,
+    clientEmail: null,
+    clientPhone: null,
+    clientAddress: null,
+    paymentReference: null,
+    payerName: null,
+    notes: null,
+    createdAt: row.paidAt,
+    updatedAt: row.paidAt,
+  })) as ClientPayment[];
 }
 
 export async function buildClientPaymentSummary(userId: string): Promise<ClientPaymentSummary> {
@@ -135,28 +229,7 @@ export async function buildClientPaymentSummary(userId: string): Promise<ClientP
   const idDoc = normalizeIdDocumentNumber(user?.identityExtraction?.idDocumentNumber ?? "");
   const email = user?.email?.trim() ?? "";
 
-  let payments: ClientPayment[] = [];
-  try {
-    await linkOrphanPaymentsToUser(userId, email, idDoc);
-
-    const orFilters: Array<
-      { userId: string } | { idDocumentNumber: string } | { clientEmail: { equals: string; mode: "insensitive" } }
-    > = [{ userId }];
-    if (idDoc.length >= 5) {
-      orFilters.push({ idDocumentNumber: idDoc });
-    }
-    if (email) {
-      orFilters.push({ clientEmail: { equals: email, mode: "insensitive" } });
-    }
-
-    payments = await prisma.clientPayment.findMany({
-      where: { OR: orFilters },
-      orderBy: { paidAt: "desc" },
-    });
-  } catch (err) {
-    if (!isMissingPaymentsSchema(err)) throw err;
-    payments = [];
-  }
+  const payments = await loadClientPaymentsForSummary(userId, idDoc, email);
 
   const plan = user && "vehiclePlan" in user ? user.vehiclePlan : null;
   let installmentAmountCop = plan?.installmentAmountCop ?? null;
