@@ -504,7 +504,7 @@ export async function registerSupportEmergencyReport(input: {
   clientSafe: boolean;
   fallbackClientEmail?: string;
   vehicleLabel?: string;
-}): Promise<SupportChatSessionDto> {
+}): Promise<SupportChatSessionDto & { emergencyEmailSent: boolean }> {
   const location = input.location.trim();
   const description = input.description.trim();
   if (location.length < 3) {
@@ -548,21 +548,34 @@ export async function registerSupportEmergencyReport(input: {
     // fallback email del token
   }
 
-  void sendSupportEmergencyReportEmail({
-    sessionId: session.id,
-    clientEmail,
-    clientName,
-    location,
-    description,
-    situationLabel,
-    clientSafe: input.clientSafe,
-    vehicleLabel: input.vehicleLabel?.trim() || undefined,
-  }).catch((err) => {
+  let emergencyEmailSent = false;
+  try {
+    await sendSupportEmergencyReportEmail({
+      sessionId: session.id,
+      clientEmail,
+      clientName,
+      location,
+      description,
+      situationLabel,
+      clientSafe: input.clientSafe,
+      vehicleLabel: input.vehicleLabel?.trim() || undefined,
+    });
+    emergencyEmailSent = true;
+  } catch (err) {
     console.error("[support-chat] No se pudo enviar correo de emergencia:", err);
-  });
+  }
+
+  const ackIntro = emergencyEmailSent
+    ? "Recibimos tu reporte. **Ya avisamos al equipo atoo** por correo (fuera de horario laboral también)."
+    : [
+        "Recibimos tu reporte en nuestro sistema.",
+        "",
+        "⚠️ **No pudimos enviar el aviso por correo** en este momento; el equipo lo verá en el panel de soporte cuando entre.",
+        "Si hay peligro inmediato, llama al **123**.",
+      ].join("\n");
 
   const ack = [
-    "Recibimos tu reporte. **Ya avisamos al equipo atoo** por correo.",
+    ackIntro,
     "",
     "Los trámites con la empresa (seguro, grúa, documentos) se atienden en **horario laboral** (lun–vie 8:00–18:00, Colombia).",
     "",
@@ -577,7 +590,7 @@ export async function registerSupportEmergencyReport(input: {
     where: { id: session.id },
     include: { messages: { orderBy: { createdAt: "asc" } } },
   });
-  return mapSession(refreshed);
+  return { ...mapSession(refreshed), emergencyEmailSent };
 }
 
 export function getSupportEmergencyInfoPayload() {

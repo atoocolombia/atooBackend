@@ -4,7 +4,7 @@ import {
   escapeHtml,
   sendTransactionalEmail,
 } from "./deliveryEmails.js";
-import { resolveAdminChatUrl, resolveSupportHandoffInbox } from "./supportHandoffEmail.js";
+import { resolveAdminChatUrl, resolveSupportEmergencyInboxes } from "./supportHandoffEmail.js";
 import { ATOO_BUSINESS_HOURS_NOTE } from "./supportEmergencyContent.js";
 
 export async function sendSupportEmergencyReportEmail(input: {
@@ -17,7 +17,7 @@ export async function sendSupportEmergencyReportEmail(input: {
   clientSafe: boolean;
   vehicleLabel?: string;
 }): Promise<void> {
-  const to = resolveSupportHandoffInbox();
+  const to = resolveSupportEmergencyInboxes();
   const chatUrl = resolveAdminChatUrl(input.sessionId);
   const safeLine = input.clientSafe
     ? "El cliente indicó que está a salvo en este momento."
