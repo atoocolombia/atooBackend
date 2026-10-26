@@ -1,7 +1,7 @@
 import type { ClientGpsReportDto } from "./gpsReportDto.js";
 
-/** Máximo razonable de km recorridos en un informe semanal/mensual. */
-const MAX_PERIOD_KM = 2_500;
+/** Máximo razonable de km recorridos en un informe (p. ej. mensual de flota). */
+const MAX_PERIOD_KM = 8_000;
 const MAX_SPEED_KMH = 250;
 const MAX_ODOMETER_KM = 600_000;
 
@@ -81,11 +81,80 @@ function pickClientHighlights(
   return out;
 }
 
+export type ClientGpsUsageSummary = {
+  /** Km recorridos en el periodo del informe (longitud de ruta). */
+  routeKm: number | null;
+  maxSpeedKmh: number | null;
+  avgSpeedKmh: number | null;
+  /** Odómetro al cierre del periodo (km totales del vehículo). */
+  vehicleOdometerKm: number | null;
+  movementDuration: string | null;
+  parkedDuration: string | null;
+  engineHours: string | null;
+};
+
 export type ClientGpsReportViewDto = ClientGpsReportDto & {
   hasGpsLocation: boolean;
   summaryTitle: string;
   clientHighlights: Array<{ label: string; value: string }>;
+  usageSummary: ClientGpsUsageSummary;
 };
+
+function highlightValue(highlights: Array<{ label: string; value: string }>, ...labelNeedles: string[]): string | null {
+  for (const row of highlights) {
+    const key = normalizeLabel(row.label);
+    if (labelNeedles.some((n) => key.includes(n))) return row.value?.trim() || null;
+  }
+  return null;
+}
+
+function parseKmFromText(value: string | null): number | null {
+  if (!value) return null;
+  const m = value.match(/([\d]+(?:[.,]\d+)?)/);
+  if (!m) return null;
+  const n = Number(m[1]!.replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseOdometerFromHighlight(value: string | null): number | null {
+  return sanitizeOdometerKm(parseKmFromText(value));
+}
+
+function buildUsageSummary(dto: ClientGpsReportDto, sanitized: ClientGpsReportDto): ClientGpsUsageSummary {
+  const all = [...sanitized.highlights, ...dto.highlights];
+  const movementDuration = highlightValue(all, "tiempo en movimiento", "duracion de movimiento");
+  const parkedDuration = highlightValue(all, "tiempo estacionado", "duracion de estacionado");
+  const engineHours = highlightValue(all, "horas del motor");
+  const vehicleOdometerKm =
+    parseOdometerFromHighlight(highlightValue(all, "kilometraje del vehiculo", "odometro fin")) ??
+    null;
+
+  let routeKm = sanitized.totalDistanceKm;
+  if (routeKm == null) {
+    routeKm = sanitizeKm(parseKmFromText(highlightValue(all, "longitud de ruta", "longitud ruta")));
+  }
+
+  let maxSpeedKmh = sanitized.maxSpeedKmh;
+  if (maxSpeedKmh == null) {
+    maxSpeedKmh = sanitizeSpeed(parseKmFromText(highlightValue(all, "velocidad maxima", "vel maxima")));
+  }
+  let avgSpeedKmh = sanitized.avgSpeedKmh;
+  if (avgSpeedKmh == null) {
+    avgSpeedKmh = sanitizeSpeed(
+      parseKmFromText(highlightValue(all, "velocidad media", "vel media", "velocidad promedio")),
+    );
+  }
+
+  return {
+    routeKm,
+    maxSpeedKmh,
+    avgSpeedKmh,
+    vehicleOdometerKm,
+    movementDuration,
+    parkedDuration,
+    engineHours,
+  };
+}
 
 export function toClientGpsReportView(dto: ClientGpsReportDto): ClientGpsReportViewDto {
   const hasGpsLocation = isValidGpsCoordinate(dto.lastLatitude, dto.lastLongitude);
@@ -109,18 +178,32 @@ export function toClientGpsReportView(dto: ClientGpsReportDto): ClientGpsReportV
     samplePoints: hasGpsLocation ? dto.samplePoints : [],
   };
 
-  let clientHighlights = pickClientHighlights(sanitized.highlights);
+  const usageSummary = buildUsageSummary(dto, sanitized);
 
-  if (totalDistanceKm != null && !clientHighlights.some((h) => normalizeLabel(h.label).includes("distanc"))) {
-    clientHighlights.unshift({ label: "Distancia del periodo", value: `${totalDistanceKm} km` });
-  }
-  if (maxSpeedKmh != null && !clientHighlights.some((h) => h.label.toLowerCase().includes("max"))) {
-    clientHighlights.push({ label: "Velocidad máxima", value: `${maxSpeedKmh} km/h` });
-  }
+  let clientHighlights = pickClientHighlights(sanitized.highlights).filter((h) => {
+    const key = normalizeLabel(h.label);
+    if (key.includes("registros en archivo") || key.includes("fuente") || key.includes("evento:")) return false;
+    if (key.includes("distancia estimada")) return false;
+    if (usageSummary.routeKm != null && (key.includes("distanc") || key.includes("longitud"))) return false;
+    if (usageSummary.maxSpeedKmh != null && key.includes("veloc") && key.includes("max")) return false;
+    if (usageSummary.avgSpeedKmh != null && key.includes("veloc") && (key.includes("media") || key.includes("prom"))) {
+      return false;
+    }
+    if (usageSummary.vehicleOdometerKm != null && key.includes("kilometraje del vehiculo")) return false;
+    if (usageSummary.movementDuration && key.includes("movimiento")) return false;
+    if (usageSummary.parkedDuration && key.includes("estacionado")) return false;
+    if (usageSummary.engineHours && key.includes("horas del motor")) return false;
+    return true;
+  });
 
-  const summaryTitle = hasGpsLocation ? "Rastreo GPS" : "Resumen de telemetría";
+  const summaryTitle = hasGpsLocation ? "Rastreo GPS" : "Uso del vehículo (informe)";
 
-  if (clientHighlights.length === 0 && !totalDistanceKm && !hasGpsLocation) {
+  if (
+    clientHighlights.length === 0 &&
+    !usageSummary.routeKm &&
+    !usageSummary.vehicleOdometerKm &&
+    !hasGpsLocation
+  ) {
     clientHighlights = [
       {
         label: "Informe recibido",
@@ -134,6 +217,7 @@ export function toClientGpsReportView(dto: ClientGpsReportDto): ClientGpsReportV
     hasGpsLocation,
     summaryTitle,
     clientHighlights,
+    usageSummary,
   };
 }
 
