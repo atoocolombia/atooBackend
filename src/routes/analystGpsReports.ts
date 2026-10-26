@@ -73,7 +73,7 @@ analystGpsReportsRouter.post("/", (req, res, next) => {
         return;
       }
 
-      const parsed = parseGpsReportFile(req.file.path);
+      const parsed = await parseGpsReportFile(req.file.path, req.file.mimetype);
       const warnings = [...parsed.warnings];
 
       const planVin = normalizeVin(client.vehiclePlan?.vin);

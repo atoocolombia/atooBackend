@@ -10,6 +10,7 @@ const ALLOWED = new Set([
   "text/csv",
   "text/plain",
   "application/csv",
+  "application/pdf",
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
@@ -33,10 +34,13 @@ export const gpsReportUpload = multer({
   limits: { fileSize: MAX_BYTES },
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    if (ALLOWED.has(file.mimetype) || [".csv", ".txt", ".xls", ".xlsx"].includes(ext)) {
+    if (
+      ALLOWED.has(file.mimetype) ||
+      [".csv", ".txt", ".pdf", ".xls", ".xlsx"].includes(ext)
+    ) {
       cb(null, true);
       return;
     }
-    cb(new Error("Formato no soportado. Usa CSV o TXT exportado desde la plataforma GPS."));
+    cb(new Error("Formato no soportado. Usa PDF o CSV exportado desde la plataforma GPS."));
   },
 });
