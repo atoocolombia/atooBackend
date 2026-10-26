@@ -143,6 +143,21 @@ adminInspectionsRouter.get("/notifications", async (req, res, next) => {
   }
 });
 
+adminInspectionsRouter.patch("/notifications/read-all", async (req, res, next) => {
+  try {
+    const admin = requireAdminActor(req, res);
+    if (!admin) return;
+
+    await prisma.userNotification.updateMany({
+      where: { userId: admin.id, read: false },
+      data: { read: true },
+    });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
 adminInspectionsRouter.patch("/notifications/:notificationId/read", async (req, res, next) => {
   try {
     const admin = requireAdminActor(req, res);
