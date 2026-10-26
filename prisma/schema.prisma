@@ -122,6 +122,8 @@ model User {
   registeredPayments    ClientPayment[]   @relation("RegisteredPayments")
   clientPayments        ClientPayment[]   @relation("ClientPayments")
   billingExtras         ClientBillingExtra[]
+  billingPeriods        ClientBillingPeriod[]
+  workshopPaymentPlans  ClientWorkshopPaymentPlan[]
   serviceOfferDecisions ClientServiceOfferDecision[]
   trainingPurchases     TrainingPurchase[]
   supportChatSessions   SupportChatSession[]
@@ -640,12 +642,37 @@ model ClientBillingExtra {
   /// insurance | service | other
   category    String   @default("service")
   amountCop   Int
+  /// Valor total del servicio cuando se paga en cuotas (diferido).
+  totalServiceCop            Int?
+  deferInstallmentsTotal     Int?
+  deferInstallmentsRemaining Int?
   active      Boolean  @default(true)
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([userId, active])
+}
+
+/// Snapshot mensual de la cuenta de cobro (para consultar meses anteriores).
+model ClientBillingPeriod {
+  id                   String   @id
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  year                 Int
+  month                Int
+  baseInstallmentCop   Int
+  baseInstallmentLabel String
+  lines                Json
+  workshopLines        Json              @default("[]")
+  extrasSubtotalCop    Int
+  workshopSubtotalCop  Int               @default(0)
+  totalDueCop          Int
+  snapshotAt           DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([userId, year, month])
+  @@index([userId, year, month])
 }
 
 /// Oferta de servicio adicional (banner en pagos); el cliente acepta o rechaza.
@@ -657,6 +684,8 @@ model ClientServiceOffer {
   detailBody     String
   /// [{ "label": "...", "amountCop": 50000, "description": "..." }]
   extraItems     Json
+  /// Cuotas para pagar el total del servicio (1 = un solo mes al precio indicado).
+  deferMonths    Int      @default(1)
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -674,4 +703,26 @@ model ClientServiceOfferDecision {
 
   @@unique([userId, offerId])
   @@index([userId])
+}
+
+/// Cargo de taller (procedimiento autorizado): pago en un mes o diferido en cuotas mensuales.
+model ClientWorkshopPaymentPlan {
+  id                      String   @id
+  userId                  String
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  suggestionId            String?  @unique
+  workshopName            String
+  title                   String
+  totalCostCop            Int
+  monthlyChargeCop        Int
+  deferMonths             Int      @default(1)
+  installmentsTotal       Int      @default(1)
+  installmentsRemaining   Int      @default(1)
+  billingStartYear        Int
+  billingStartMonth       Int
+  active                  Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([userId, active])
 }

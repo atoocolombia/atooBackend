@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   buildClientBillingStatement,
+  listClientBillingPeriods,
   respondToClientServiceOffer,
 } from "../lib/clientBillingStatement.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -9,11 +10,37 @@ export const clientBillingRouter = Router();
 
 clientBillingRouter.use(requireAuth, requireRole("USER", "ADMIN"));
 
+clientBillingRouter.get("/periods", async (req, res, next) => {
+  try {
+    const periods = await listClientBillingPeriods(req.auth!.id);
+    res.json({ periods });
+  } catch (err) {
+    next(err);
+  }
+});
+
 clientBillingRouter.get("/statement", async (req, res, next) => {
   try {
-    const statement = await buildClientBillingStatement(req.auth!.id);
+    const yearRaw = req.query.year;
+    const monthRaw = req.query.month;
+    const year = yearRaw != null ? Number(yearRaw) : undefined;
+    const month = monthRaw != null ? Number(monthRaw) : undefined;
+    if (yearRaw != null && (!Number.isInteger(year) || year! < 2020)) {
+      res.status(400).json({ error: "Año inválido" });
+      return;
+    }
+    if (monthRaw != null && (!Number.isInteger(month) || month! < 1 || month! > 12)) {
+      res.status(400).json({ error: "Mes inválido" });
+      return;
+    }
+    const statement = await buildClientBillingStatement(req.auth!.id, year, month);
     res.json({ statement });
   } catch (err) {
+    const message = err instanceof Error ? err.message : "No se pudo cargar la cuenta de cobro";
+    if (message.includes("futuro") || message.includes("guardada")) {
+      res.status(400).json({ error: message });
+      return;
+    }
     next(err);
   }
 });

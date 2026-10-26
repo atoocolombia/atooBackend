@@ -4,6 +4,7 @@ import { Router } from "express";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { formatCop } from "../lib/inspectionSession.js";
 import { prisma } from "../lib/prisma.js";
+import { createWorkshopPaymentPlanFromApproval } from "../lib/clientWorkshopBilling.js";
 import { createUserNotification } from "../lib/userNotifications.js";
 import { buildUserDisplayName } from "../lib/userProfile.js";
 
@@ -168,11 +169,12 @@ adminInspectionsRouter.patch("/procedure-suggestions/:suggestionId", async (req,
     if (!admin) return;
 
     const suggestionId = String(req.params.suggestionId ?? "");
-    const { action, adminNotes, estimatedCostCop, isUrgent } = req.body as {
+    const { action, adminNotes, estimatedCostCop, isUrgent, paymentDeferMonths } = req.body as {
       action?: "approve" | "reject";
       adminNotes?: string;
       estimatedCostCop?: number | null;
       isUrgent?: boolean;
+      paymentDeferMonths?: number;
     };
 
     const suggestion = await prisma.inspectionProcedureSuggestion.findUnique({
@@ -304,6 +306,11 @@ adminInspectionsRouter.patch("/procedure-suggestions/:suggestionId", async (req,
     }
 
     const deadlineAt = urgent ? new Date(Date.now() + ONE_WEEK_MS) : null;
+    const deferMonths =
+      paymentDeferMonths != null && Number.isFinite(Number(paymentDeferMonths))
+        ? Math.max(1, Math.min(36, Math.round(Number(paymentDeferMonths))))
+        : 1;
+
     const updated = await prisma.inspectionProcedureSuggestion.update({
       where: { id: suggestionId },
       data: {
@@ -316,6 +323,15 @@ adminInspectionsRouter.patch("/procedure-suggestions/:suggestionId", async (req,
         deadlineAt,
       },
       include: suggestionInclude,
+    });
+
+    await createWorkshopPaymentPlanFromApproval({
+      userId: suggestion.session.appointment.userId,
+      suggestionId,
+      workshopName: suggestion.session.appointment.workshop.name,
+      title: suggestion.title,
+      totalCostCop: finalCost!,
+      deferMonths,
     });
 
     const deadlineLabel = deadlineAt
@@ -334,14 +350,23 @@ adminInspectionsRouter.patch("/procedure-suggestions/:suggestionId", async (req,
         ? "Ajuste urgente con costo — agenda en 7 días"
         : "Ajuste con costo autorizado",
       message: urgent
-        ? `Se autorizó "${suggestion.title}" (${formatCop(finalCost)}). Es urgente: tienes hasta el ${deadlineLabel} para agendar e ir a completar el ajuste.`
-        : `Se autorizó "${suggestion.title}" (${formatCop(finalCost)}). Agenda una cita en el taller para completar el ajuste.`,
+        ? `Se autorizó "${suggestion.title}" (${formatCop(finalCost)}). Es urgente: tienes hasta el ${deadlineLabel} para agendar e ir a completar el ajuste.${
+            deferMonths > 1
+              ? ` El pago se diferirá en ${deferMonths} cuotas mensuales en tu cuenta de cobro.`
+              : " El cargo completo aparecerá en tu cuenta de cobro del mes."
+          }`
+        : `Se autorizó "${suggestion.title}" (${formatCop(finalCost)}). Agenda una cita en el taller para completar el ajuste.${
+            deferMonths > 1
+              ? ` El pago se diferirá en ${deferMonths} cuotas mensuales en tu cuenta de cobro.`
+              : " El cargo completo aparecerá en tu cuenta de cobro del mes."
+          }`,
       metadata: {
         suggestionId,
         appointmentId: suggestion.session.appointmentId,
         estimatedCostCop: finalCost,
         isUrgent: urgent,
         deadlineAt: deadlineAt?.toISOString() ?? null,
+        paymentDeferMonths: deferMonths,
       },
     });
 

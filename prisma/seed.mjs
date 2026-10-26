@@ -477,10 +477,11 @@ async function seedClientDemo() {
       extraItems: [
         {
           label: 'Asistencia vial premium',
-          amountCop: 45000,
-          description: 'Por mes, incluye grúa y llantas',
+          amountCop: 135000,
+          description: 'Valor total del servicio anual prorrateado en cuotas',
         },
       ],
+      deferMonths: 3,
       active: true,
     },
     create: {
@@ -489,14 +490,55 @@ async function seedClientDemo() {
       bannerTitle: '¿Quieres grúa ilimitada y cambio de llanta en ruta?',
       bannerSubtitle: 'Servicio nuevo para clientes atoo en Bogotá',
       detailBody:
-        'Incluye grúa sin límite de eventos en el año, cambio de llanta en sitio y batería de arranque.\n\nEl cargo se suma a tu cuenta de cobro mensual mientras mantengas el servicio activo.',
+        'Incluye grúa sin límite de eventos en el año, cambio de llanta en sitio y batería de arranque.\n\nPuedes pagarlo en cuotas mensuales según el plan que aceptes (ver desglose en este aviso).',
       extraItems: [
         {
           label: 'Asistencia vial premium',
-          amountCop: 45000,
-          description: 'Por mes, incluye grúa y llantas',
+          amountCop: 135000,
+          description: 'Valor total del servicio',
         },
       ],
+      deferMonths: 3,
+      active: true,
+    },
+  });
+
+  const workshopBillingStart = new Date();
+  const wYear = workshopBillingStart.getFullYear();
+  const wMonth = workshopBillingStart.getMonth() + 1;
+  const workshopTotal = 450_000;
+  const workshopDefer = 3;
+  const workshopMonthly = Math.ceil(workshopTotal / workshopDefer);
+
+  await prisma.clientWorkshopPaymentPlan.upsert({
+    where: { id: 'WKSHOP-DEMO-BRAKES' },
+    update: {
+      userId: client.id,
+      suggestionId: null,
+      workshopName: 'Taller Demo Bogotá',
+      title: 'Rectificación de frenos (demo)',
+      totalCostCop: workshopTotal,
+      monthlyChargeCop: workshopMonthly,
+      deferMonths: workshopDefer,
+      installmentsTotal: workshopDefer,
+      installmentsRemaining: workshopDefer,
+      billingStartYear: wYear,
+      billingStartMonth: wMonth,
+      active: true,
+    },
+    create: {
+      id: 'WKSHOP-DEMO-BRAKES',
+      userId: client.id,
+      suggestionId: null,
+      workshopName: 'Taller Demo Bogotá',
+      title: 'Rectificación de frenos (demo)',
+      totalCostCop: workshopTotal,
+      monthlyChargeCop: workshopMonthly,
+      deferMonths: workshopDefer,
+      installmentsTotal: workshopDefer,
+      installmentsRemaining: workshopDefer,
+      billingStartYear: wYear,
+      billingStartMonth: wMonth,
       active: true,
     },
   });
