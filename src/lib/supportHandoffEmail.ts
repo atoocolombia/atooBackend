@@ -6,11 +6,31 @@ import {
 } from "./deliveryEmails.js";
 import { resolvePublicClientOrigin } from "./clientPublicOrigin.js";
 
+function parseInboxList(raw: string | undefined, fallback: string): string[] {
+  const source = raw?.trim() || fallback;
+  const parts = source
+    .split(/[,;]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [fallback];
+}
+
 /** Quién recibe el aviso cuando un cliente pide humano (no es el remitente). */
+export function resolveSupportHandoffInboxes(): string[] {
+  return parseInboxList(process.env.SUPPORT_HANDOFF_EMAIL, "atoocolombia@gmail.com");
+}
+
 export function resolveSupportHandoffInbox(): string {
-  return (
-    process.env.SUPPORT_HANDOFF_EMAIL?.trim().toLowerCase() || "atoocolombia@gmail.com"
-  );
+  return resolveSupportHandoffInboxes()[0]!;
+}
+
+/** Destinos del correo URGENTE de emergencia (por defecto = handoff; opcional lista extra). */
+export function resolveSupportEmergencyInboxes(): string[] {
+  const handoff = resolveSupportHandoffInboxes();
+  const extra = process.env.SUPPORT_EMERGENCY_EMAIL?.trim();
+  if (!extra) return handoff;
+  const extraList = parseInboxList(extra, handoff[0]!);
+  return [...new Set([...extraList, ...handoff])];
 }
 
 export function resolveAdminChatUrl(sessionId: string): string {

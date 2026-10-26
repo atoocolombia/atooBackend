@@ -96,7 +96,7 @@ supportChatRouter.post("/emergency-report", async (req, res, next) => {
       // opcional
     }
 
-    const session = await registerSupportEmergencyReport({
+    const result = await registerSupportEmergencyReport({
       userId,
       sessionId: sessionId?.trim() || undefined,
       situation: (situation ?? "otro").trim(),
@@ -107,7 +107,8 @@ supportChatRouter.post("/emergency-report", async (req, res, next) => {
       vehicleLabel,
     });
 
-    res.json({ session });
+    const { emergencyEmailSent, ...session } = result;
+    res.json({ session, emergencyEmailSent });
   } catch (err) {
     const message = err instanceof Error ? err.message : "No se pudo registrar el reporte";
     if (message.includes("Ubicación") || message.includes("Describe") || message.includes("Indica")) {

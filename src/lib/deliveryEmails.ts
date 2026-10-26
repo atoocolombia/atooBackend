@@ -81,14 +81,16 @@ export function isEmailConfigured(): boolean {
 }
 
 export async function sendTransactionalEmail(input: {
-  to: string;
+  to: string | string[];
   subject: string;
   html: string;
   text: string;
 }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = resolveFromAddress();
-  const to = normalizeAnyEmail(input.to);
+  const toList = (Array.isArray(input.to) ? input.to : [input.to]).map((addr) =>
+    normalizeAnyEmail(addr),
+  );
 
   if (!apiKey) {
     console.warn("[email] Falta RESEND_API_KEY");
@@ -98,7 +100,7 @@ export async function sendTransactionalEmail(input: {
   const resend = new Resend(apiKey);
   const { data, error } = await resend.emails.send({
     from,
-    to,
+    to: toList.length === 1 ? toList[0]! : toList,
     subject: input.subject,
     html: input.html,
     text: input.text,
@@ -109,7 +111,9 @@ export async function sendTransactionalEmail(input: {
     throw new Error(error.message ?? "No se pudo enviar el correo");
   }
 
-  console.info(`[email] Enviado a ${to} desde ${from} (id: ${data?.id ?? "n/a"})`);
+  console.info(
+    `[email] Enviado a ${toList.join(", ")} desde ${from} (id: ${data?.id ?? "n/a"})`,
+  );
 }
 
 export async function sendDeliveryDocumentsEmail(clientName: string, email: string): Promise<void> {
