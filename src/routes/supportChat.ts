@@ -9,6 +9,7 @@ import {
   getSupportEmergencyInfoPayload,
   handleSupportChatUserMessage,
   registerSupportEmergencyReport,
+  setSupportChatSessionTopic,
 } from "../lib/supportChatSessions.js";
 import {
   assertSupportChatFileSize,
@@ -48,6 +49,20 @@ supportChatRouter.get("/context", async (req, res, next) => {
 supportChatRouter.get("/session", async (req, res, next) => {
   try {
     const session = await getActiveSupportChatSession(req.auth!.id);
+    res.json({ session });
+  } catch (err) {
+    next(err);
+  }
+});
+
+supportChatRouter.post("/set-topic", async (req, res, next) => {
+  try {
+    const { topic, sessionId } = req.body as { topic?: number; sessionId?: string };
+    if (typeof topic !== "number") {
+      res.status(400).json({ error: "Indica el tema" });
+      return;
+    }
+    const session = await setSupportChatSessionTopic(req.auth!.id, sessionId, topic);
     res.json({ session });
   } catch (err) {
     next(err);

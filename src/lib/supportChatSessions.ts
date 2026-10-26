@@ -159,6 +159,23 @@ export async function getOrCreateSupportChatSession(
   });
 }
 
+export async function setSupportChatSessionTopic(
+  userId: string,
+  sessionId: string | undefined,
+  topic: number,
+): Promise<SupportChatSessionDto> {
+  if (![1, 2, 3, 4, 5].includes(topic)) {
+    throw new Error("Tema inválido");
+  }
+  const session = await getOrCreateSupportChatSession(userId, sessionId);
+  const updated = await prisma.supportChatSession.update({
+    where: { id: session.id },
+    data: { topic },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+  });
+  return mapSession(updated);
+}
+
 async function appendMessage(
   sessionId: string,
   role: SupportChatMessage["role"],
