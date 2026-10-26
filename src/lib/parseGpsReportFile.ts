@@ -206,6 +206,82 @@ async function readReportText(
   return { text, warnings };
 }
 
+/** Resumen tipo flota al final del PDF (Longitud de ruta, Odómetro Fin, etc.). */
+function parseLabelValueRows(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    const m = trimmed.match(/^([^:]{3,80}):\s*(.+)$/);
+    if (!m) continue;
+    out[normHeader(m[1]!)] = m[2]!.trim();
+  }
+  return out;
+}
+
+function durationFromSummaryValue(raw: string | undefined): string | null {
+  if (!raw?.trim()) return null;
+  const v = raw.trim().replace(/\s+/g, " ");
+  if (v.length > 40) return null;
+  return v;
+}
+
+function kmFromSummaryValue(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const m = raw.match(/([\d.,]+)/);
+  return m ? parseNumber(m[1]) : null;
+}
+
+function extractFleetSummaryFromText(text: string): {
+  totalDistanceKm: number | null;
+  maxSpeedKmh: number | null;
+  avgSpeedKmh: number | null;
+  odometerEndKm: number | null;
+  telemetryHighlights: GpsHighlight[];
+} {
+  const kv = parseLabelValueRows(text);
+  const pick = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = kv[k];
+      if (v) return v;
+    }
+    return undefined;
+  };
+
+  const routeRaw = pick("longitud de ruta", "longitud ruta", "distancia recorrida");
+  const odometerStart = sanitizeOdometerKm(kmFromSummaryValue(pick("odometro comienzo", "odometro inicio")));
+  const odometerEnd = sanitizeOdometerKm(kmFromSummaryValue(pick("odometro fin")));
+  let totalDistanceKm = sanitizeKm(kmFromSummaryValue(routeRaw));
+  if (totalDistanceKm == null && odometerStart != null && odometerEnd != null && odometerEnd >= odometerStart) {
+    totalDistanceKm = sanitizeKm(odometerEnd - odometerStart);
+  }
+
+  const maxSpeedKmh = sanitizeSpeed(kmFromSummaryValue(pick("velocidad maxima", "vel maxima")));
+  const avgSpeedKmh = sanitizeSpeed(kmFromSummaryValue(pick("velocidad media", "vel media", "velocidad promedio")));
+
+  const telemetryHighlights: GpsHighlight[] = [];
+  const movement = durationFromSummaryValue(pick("duracion de movimiento", "duracion movimiento"));
+  const parked = durationFromSummaryValue(pick("duracion de estacionado", "duracion estacionado"));
+  const engineHours = durationFromSummaryValue(pick("horas del motor"));
+  if (movement) telemetryHighlights.push({ label: "Tiempo en movimiento", value: movement });
+  if (parked) telemetryHighlights.push({ label: "Tiempo estacionado", value: parked });
+  if (engineHours) telemetryHighlights.push({ label: "Horas del motor", value: engineHours });
+  if (odometerEnd != null) {
+    telemetryHighlights.push({ label: "Kilometraje del vehículo", value: `${odometerEnd} km` });
+  }
+
+  const hasAny =
+    totalDistanceKm != null ||
+    maxSpeedKmh != null ||
+    avgSpeedKmh != null ||
+    odometerEnd != null ||
+    telemetryHighlights.length > 0;
+  if (!hasAny) {
+    return { totalDistanceKm: null, maxSpeedKmh: null, avgSpeedKmh: null, odometerEndKm: null, telemetryHighlights: [] };
+  }
+
+  return { totalDistanceKm, maxSpeedKmh, avgSpeedKmh, odometerEndKm: odometerEnd, telemetryHighlights };
+}
+
 function extractFieldsFromProse(text: string): {
   plate: string | null;
   vin: string | null;
@@ -221,17 +297,16 @@ function extractFieldsFromProse(text: string): {
   telemetryHighlights: GpsHighlight[];
 } {
   const norm = stripAccents(text);
+  const fleet = extractFleetSummaryFromText(text);
 
   const vinMatch = norm.match(/\b([A-HJ-NPR-Z0-9]{17})\b/i);
   const plateMatch = norm.match(
     /(?:placa|matricula|plate|patente)\s*[:#]?\s*([A-Z0-9-]{5,10})/i,
   );
   const kmMatch = norm.match(
-    /(?:km recorrido|distancia del periodo|distancia recorrida|recorrido del periodo)\s*[:#]?\s*([\d.,]{1,12})\s*(?:km)?/i,
+    /(?:longitud de ruta|km recorrido|distancia del periodo|distancia recorrida|recorrido del periodo)\s*[:#]?\s*([\d.,]{1,12})\s*(?:km|kph)?/i,
   );
-  const odometerMatch = norm.match(
-    /(?:kilometraje actual|odometro|odómetro|kilometraje total)\s*[:#]?\s*([\d.,]{1,12})/i,
-  );
+  const odometerEndMatch = norm.match(/odometro\s+fin\s*[:#]?\s*([\d.,]{1,12})/i);
   const socMatch = norm.match(
     /(?:nivel de carga|soc|estado de carga)\s*[:#]?\s*(\d{1,3})\s*%/i,
   );
@@ -239,10 +314,10 @@ function extractFieldsFromProse(text: string): {
     /(?:autonomia restante|autonomía restante|autonomia)\s*[:#]?\s*([\d.,]{1,6})\s*km/i,
   );
   const maxSpeedMatch = norm.match(
-    /(?:vel(?:ocidad)?\.?\s*max(?:ima)?|max speed)\s*[:#]?\s*([\d.,]+)/i,
+    /(?:velocidad\s+maxima|vel(?:ocidad)?\.?\s*max(?:ima)?|max speed)\s*[:#]?\s*([\d.,]+)\s*(?:kph|km\/h)?/i,
   );
   const avgSpeedMatch = norm.match(
-    /(?:vel(?:ocidad)?\.?\s*prom(?:edio)?|avg speed)\s*[:#]?\s*([\d.,]+)/i,
+    /(?:velocidad\s+media|vel(?:ocidad)?\.?\s*prom(?:edio)?|avg speed)\s*[:#]?\s*([\d.,]+)\s*(?:kph|km\/h)?/i,
   );
   const addressMatch = norm.match(
     /(?:direccion|ubicacion|ultima ubicacion|address|location)\s*[:#]?\s*([^\n]{8,120})/i,
@@ -264,7 +339,7 @@ function extractFieldsFromProse(text: string): {
   }
   dateCandidates.sort((a, b) => a.getTime() - b.getTime());
 
-  const telemetryHighlights: GpsHighlight[] = [];
+  const telemetryHighlights: GpsHighlight[] = [...fleet.telemetryHighlights];
   if (socMatch) {
     telemetryHighlights.push({ label: "Nivel de carga", value: `${socMatch[1]} %` });
   }
@@ -272,17 +347,26 @@ function extractFieldsFromProse(text: string): {
     const km = sanitizeKm(parseNumber(rangeMatch[1]), 800);
     if (km != null) telemetryHighlights.push({ label: "Autonomía restante", value: `${km} km` });
   }
-  if (odometerMatch) {
-    const odo = sanitizeOdometerKm(parseNumber(odometerMatch[1]));
-    if (odo != null) telemetryHighlights.push({ label: "Kilometraje actual", value: `${odo} km` });
+  const odometerEnd = odometerEndMatch
+    ? sanitizeOdometerKm(parseNumber(odometerEndMatch[1]))
+    : fleet.odometerEndKm;
+  if (odometerEnd != null && !telemetryHighlights.some((h) => h.label === "Kilometraje del vehículo")) {
+    telemetryHighlights.push({ label: "Kilometraje del vehículo", value: `${odometerEnd} km` });
   }
+
+  const totalDistanceKm =
+    fleet.totalDistanceKm ?? (kmMatch ? sanitizeKm(parseNumber(kmMatch[1])) : null);
+  const maxSpeedKmh =
+    fleet.maxSpeedKmh ?? (maxSpeedMatch ? sanitizeSpeed(parseNumber(maxSpeedMatch[1])) : null);
+  const avgSpeedKmh =
+    fleet.avgSpeedKmh ?? (avgSpeedMatch ? sanitizeSpeed(parseNumber(avgSpeedMatch[1])) : null);
 
   return {
     plate: plateMatch?.[1]?.trim().toUpperCase() ?? null,
     vin: vinMatch?.[1]?.trim().toUpperCase() ?? null,
-    totalDistanceKm: kmMatch ? sanitizeKm(parseNumber(kmMatch[1])) : null,
-    maxSpeedKmh: maxSpeedMatch ? sanitizeSpeed(parseNumber(maxSpeedMatch[1])) : null,
-    avgSpeedKmh: avgSpeedMatch ? sanitizeSpeed(parseNumber(avgSpeedMatch[1])) : null,
+    totalDistanceKm,
+    maxSpeedKmh,
+    avgSpeedKmh,
     lastLocation: addressMatch?.[1]?.trim() ?? null,
     lastLatitude,
     lastLongitude,
@@ -298,13 +382,15 @@ function mergeProseIntoParsed(parsed: ParsedGpsReport, prose: ReturnType<typeof 
   for (const h of parsed.highlights) {
     if (!mergedHighlights.some((x) => x.label === h.label)) mergedHighlights.push(h);
   }
+  const preferProseDistance = prose.totalDistanceKm != null;
+  const preferProseSpeed = prose.maxSpeedKmh != null || prose.avgSpeedKmh != null;
   return {
     ...parsed,
     plate: parsed.plate ?? prose.plate,
     vin: parsed.vin ?? prose.vin,
-    totalDistanceKm: parsed.totalDistanceKm ?? prose.totalDistanceKm,
-    maxSpeedKmh: parsed.maxSpeedKmh ?? prose.maxSpeedKmh,
-    avgSpeedKmh: parsed.avgSpeedKmh ?? prose.avgSpeedKmh,
+    totalDistanceKm: preferProseDistance ? prose.totalDistanceKm : (parsed.totalDistanceKm ?? prose.totalDistanceKm),
+    maxSpeedKmh: preferProseSpeed ? (prose.maxSpeedKmh ?? parsed.maxSpeedKmh) : (parsed.maxSpeedKmh ?? prose.maxSpeedKmh),
+    avgSpeedKmh: preferProseSpeed ? (prose.avgSpeedKmh ?? parsed.avgSpeedKmh) : (parsed.avgSpeedKmh ?? prose.avgSpeedKmh),
     lastLocation: parsed.lastLocation ?? prose.lastLocation,
     lastLatitude: parsed.lastLatitude ?? prose.lastLatitude,
     lastLongitude: parsed.lastLongitude ?? prose.lastLongitude,
