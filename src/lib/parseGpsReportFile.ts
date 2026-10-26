@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "path";
 import { extractPdfText } from "./extractPdfText.js";
+import { sanitizeKm, sanitizeOdometerKm, sanitizeSpeed } from "./gpsReportClientView.js";
 
 export type GpsHighlight = { label: string; value: string };
 
@@ -115,9 +116,29 @@ function mapHeaderIndex(headers: string[]): Partial<Record<ColKey, number>> {
 
 function parseNumber(raw: string | undefined): number | null {
   if (!raw) return null;
-  const cleaned = raw.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
+  let s = raw.trim().replace(/\s/g, "");
+  if (s.length > 24) return null;
+
+  if (/,\d{1,2}$/.test(s)) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else {
+    const parts = s.split(".");
+    if (parts.length > 2) {
+      const last = parts[parts.length - 1] ?? "";
+      if (last.length <= 2) {
+        s = `${parts.slice(0, -1).join("")}.${last}`;
+      } else {
+        s = parts.join("");
+      }
+    }
+    s = s.replace(",", ".");
+  }
+
+  s = s.replace(/[^\d.-]/g, "");
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  if (Math.abs(n) > 1e9) return null;
+  return n;
 }
 
 function parseDate(raw: string | undefined): Date | null {
@@ -197,6 +218,7 @@ function extractFieldsFromProse(text: string): {
   lastReportAt: Date | null;
   periodFrom: Date | null;
   periodTo: Date | null;
+  telemetryHighlights: GpsHighlight[];
 } {
   const norm = stripAccents(text);
 
@@ -205,7 +227,16 @@ function extractFieldsFromProse(text: string): {
     /(?:placa|matricula|plate|patente)\s*[:#]?\s*([A-Z0-9-]{5,10})/i,
   );
   const kmMatch = norm.match(
-    /(?:kilometraje|distancia|recorrido|km recorrido|total km)\s*[:#]?\s*([\d.,]+)\s*(?:km)?/i,
+    /(?:km recorrido|distancia del periodo|distancia recorrida|recorrido del periodo)\s*[:#]?\s*([\d.,]{1,12})\s*(?:km)?/i,
+  );
+  const odometerMatch = norm.match(
+    /(?:kilometraje actual|odometro|odómetro|kilometraje total)\s*[:#]?\s*([\d.,]{1,12})/i,
+  );
+  const socMatch = norm.match(
+    /(?:nivel de carga|soc|estado de carga)\s*[:#]?\s*(\d{1,3})\s*%/i,
+  );
+  const rangeMatch = norm.match(
+    /(?:autonomia restante|autonomía restante|autonomia)\s*[:#]?\s*([\d.,]{1,6})\s*km/i,
   );
   const maxSpeedMatch = norm.match(
     /(?:vel(?:ocidad)?\.?\s*max(?:ima)?|max speed)\s*[:#]?\s*([\d.,]+)/i,
@@ -233,22 +264,40 @@ function extractFieldsFromProse(text: string): {
   }
   dateCandidates.sort((a, b) => a.getTime() - b.getTime());
 
+  const telemetryHighlights: GpsHighlight[] = [];
+  if (socMatch) {
+    telemetryHighlights.push({ label: "Nivel de carga", value: `${socMatch[1]} %` });
+  }
+  if (rangeMatch) {
+    const km = sanitizeKm(parseNumber(rangeMatch[1]), 800);
+    if (km != null) telemetryHighlights.push({ label: "Autonomía restante", value: `${km} km` });
+  }
+  if (odometerMatch) {
+    const odo = sanitizeOdometerKm(parseNumber(odometerMatch[1]));
+    if (odo != null) telemetryHighlights.push({ label: "Kilometraje actual", value: `${odo} km` });
+  }
+
   return {
     plate: plateMatch?.[1]?.trim().toUpperCase() ?? null,
     vin: vinMatch?.[1]?.trim().toUpperCase() ?? null,
-    totalDistanceKm: kmMatch ? parseNumber(kmMatch[1]) : null,
-    maxSpeedKmh: maxSpeedMatch ? parseNumber(maxSpeedMatch[1]) : null,
-    avgSpeedKmh: avgSpeedMatch ? parseNumber(avgSpeedMatch[1]) : null,
+    totalDistanceKm: kmMatch ? sanitizeKm(parseNumber(kmMatch[1])) : null,
+    maxSpeedKmh: maxSpeedMatch ? sanitizeSpeed(parseNumber(maxSpeedMatch[1])) : null,
+    avgSpeedKmh: avgSpeedMatch ? sanitizeSpeed(parseNumber(avgSpeedMatch[1])) : null,
     lastLocation: addressMatch?.[1]?.trim() ?? null,
     lastLatitude,
     lastLongitude,
     lastReportAt: dateCandidates.length ? dateCandidates[dateCandidates.length - 1]! : null,
     periodFrom: dateCandidates.length ? dateCandidates[0]! : null,
     periodTo: dateCandidates.length ? dateCandidates[dateCandidates.length - 1]! : null,
+    telemetryHighlights,
   };
 }
 
 function mergeProseIntoParsed(parsed: ParsedGpsReport, prose: ReturnType<typeof extractFieldsFromProse>): ParsedGpsReport {
+  const mergedHighlights = [...prose.telemetryHighlights];
+  for (const h of parsed.highlights) {
+    if (!mergedHighlights.some((x) => x.label === h.label)) mergedHighlights.push(h);
+  }
   return {
     ...parsed,
     plate: parsed.plate ?? prose.plate,
@@ -263,6 +312,17 @@ function mergeProseIntoParsed(parsed: ParsedGpsReport, prose: ReturnType<typeof 
     periodFrom: parsed.periodFrom ?? prose.periodFrom,
     periodTo: parsed.periodTo ?? prose.periodTo,
     tripPointsCount: parsed.tripPointsCount > 0 ? parsed.tripPointsCount : prose.lastReportAt ? 1 : 0,
+    highlights: mergedHighlights.length ? mergedHighlights : parsed.highlights,
+  };
+}
+
+function finalizeParsedReport(parsed: ParsedGpsReport): ParsedGpsReport {
+  return {
+    ...parsed,
+    totalDistanceKm: sanitizeKm(parsed.totalDistanceKm),
+    maxSpeedKmh: sanitizeSpeed(parsed.maxSpeedKmh),
+    avgSpeedKmh: sanitizeSpeed(parsed.avgSpeedKmh),
+    highlights: parsed.highlights.filter((h) => !/^\d{12,}$/.test(h.value.replace(/\D/g, ""))),
   };
 }
 
@@ -328,7 +388,9 @@ function parseGpsReportText(text: string, warnings: string[]): ParsedGpsReport {
   const kvTry = parseKeyValueLines(lines);
   if (kvTry && (lines.length <= 80 || kvTry.plate || kvTry.vin)) {
     kvTry.warnings = [...warnings, ...kvTry.warnings];
-    return mergeProseIntoParsed(kvTry, extractFieldsFromProse(normalizedText));
+    return finalizeParsedReport(
+      mergeProseIntoParsed(kvTry, extractFieldsFromProse(normalizedText)),
+    );
   }
 
   const delimiter = detectDelimiter(lines[0] ?? "");
@@ -385,7 +447,7 @@ function parseGpsReportText(text: string, warnings: string[]): ParsedGpsReport {
           ? [{ label: "Distancia", value: `${proseOnly.totalDistanceKm} km` }]
           : []),
       ];
-      return proseOnly;
+      return finalizeParsedReport(proseOnly);
     }
     return emptyParsed([...warnings, "No se encontraron filas de datos en el archivo."]);
   }
@@ -401,13 +463,19 @@ function parseGpsReportText(text: string, warnings: string[]): ParsedGpsReport {
   const avgSpeedKmh = speeds.length ? speeds.reduce((a, b) => a + b, 0) / speeds.length : null;
 
   let totalDistanceKm: number | null = null;
-  const distanceSum = rows.map((r) => r.distance).filter((n): n is number => n != null && n > 0);
-  if (distanceSum.length) {
-    totalDistanceKm = Math.round(distanceSum.reduce((a, b) => a + b, 0) * 100) / 100;
-  } else {
-    const odom = rows.map((r) => r.odometer).filter((n): n is number => n != null);
+  const tripDistances = rows
+    .map((r) => r.distance)
+    .filter((n): n is number => n != null && n > 0 && n <= 500);
+  if (tripDistances.length > 0 && tripDistances.length <= 120) {
+    const sum = tripDistances.reduce((a, b) => a + b, 0);
+    totalDistanceKm = sanitizeKm(sum);
+  }
+  if (totalDistanceKm == null) {
+    const odom = rows
+      .map((r) => sanitizeOdometerKm(r.odometer))
+      .filter((n): n is number => n != null);
     if (odom.length >= 2) {
-      totalDistanceKm = Math.max(0, Math.max(...odom) - Math.min(...odom));
+      totalDistanceKm = sanitizeKm(Math.max(...odom) - Math.min(...odom));
     }
   }
 
@@ -445,25 +513,27 @@ function parseGpsReportText(text: string, warnings: string[]): ParsedGpsReport {
     highlights.push({ label: `Evento: ${ev}`, value: String(count) });
   }
 
-  return mergeProseIntoParsed(
-    {
-      plate,
-      vin,
-      periodFrom: first.at ?? null,
-      periodTo: last.at ?? null,
-      totalDistanceKm,
-      tripPointsCount: rows.length,
-      avgSpeedKmh,
-      maxSpeedKmh,
-      lastLocation: last.address,
-      lastLatitude: last.lat,
-      lastLongitude: last.lng,
-      lastReportAt: last.at ?? null,
-      highlights,
-      samplePoints,
-      warnings,
-    },
-    extractFieldsFromProse(normalizedText),
+  return finalizeParsedReport(
+    mergeProseIntoParsed(
+      {
+        plate,
+        vin,
+        periodFrom: first.at ?? null,
+        periodTo: last.at ?? null,
+        totalDistanceKm,
+        tripPointsCount: rows.length,
+        avgSpeedKmh,
+        maxSpeedKmh,
+        lastLocation: last.address,
+        lastLatitude: last.lat,
+        lastLongitude: last.lng,
+        lastReportAt: last.at ?? null,
+        highlights,
+        samplePoints,
+        warnings,
+      },
+      extractFieldsFromProse(normalizedText),
+    ),
   );
 }
 
@@ -472,7 +542,7 @@ export async function parseGpsReportFile(
   mimeType?: string,
 ): Promise<ParsedGpsReport> {
   const { text, warnings: readWarnings } = await readReportText(filePath, mimeType);
-  return parseGpsReportText(text, [...readWarnings]);
+  return finalizeParsedReport(parseGpsReportText(text, [...readWarnings]));
 }
 
 function emptyParsed(warnings: string[]): ParsedGpsReport {
