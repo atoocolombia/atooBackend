@@ -88,6 +88,8 @@ export type ClientGpsUsageSummary = {
   avgSpeedKmh: number | null;
   /** Odómetro al cierre del periodo (km totales del vehículo). */
   vehicleOdometerKm: number | null;
+  /** Campo «Odómetro total» del informe (según proveedor, suele coincidir con km del periodo). */
+  odometerTotalKm: number | null;
   movementDuration: string | null;
   parkedDuration: string | null;
   engineHours: string | null;
@@ -145,11 +147,14 @@ function buildUsageSummary(dto: ClientGpsReportDto, sanitized: ClientGpsReportDt
     );
   }
 
+  const odometerTotalKm = sanitizeKm(parseKmFromText(highlightValue(all, "odometro total")));
+
   return {
     routeKm,
     maxSpeedKmh,
     avgSpeedKmh,
     vehicleOdometerKm,
+    odometerTotalKm,
     movementDuration,
     parkedDuration,
     engineHours,
@@ -190,6 +195,8 @@ export function toClientGpsReportView(dto: ClientGpsReportDto): ClientGpsReportV
       return false;
     }
     if (usageSummary.vehicleOdometerKm != null && key.includes("kilometraje del vehiculo")) return false;
+    if (usageSummary.odometerTotalKm != null && key.includes("odometro total")) return false;
+    if (key.includes("informe recibido")) return false;
     if (usageSummary.movementDuration && key.includes("movimiento")) return false;
     if (usageSummary.parkedDuration && key.includes("estacionado")) return false;
     if (usageSummary.engineHours && key.includes("horas del motor")) return false;
@@ -197,20 +204,6 @@ export function toClientGpsReportView(dto: ClientGpsReportDto): ClientGpsReportV
   });
 
   const summaryTitle = hasGpsLocation ? "Rastreo GPS" : "Uso del vehículo (informe)";
-
-  if (
-    clientHighlights.length === 0 &&
-    !usageSummary.routeKm &&
-    !usageSummary.vehicleOdometerKm &&
-    !hasGpsLocation
-  ) {
-    clientHighlights = [
-      {
-        label: "Informe recibido",
-        value: "atoO procesó el archivo; no hay ubicación GPS en este informe.",
-      },
-    ];
-  }
 
   return {
     ...sanitized,
