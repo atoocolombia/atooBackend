@@ -121,6 +121,8 @@ model User {
   advisorDeliveries     VehicleDelivery[] @relation("AdvisorDeliveries")
   registeredPayments    ClientPayment[]   @relation("RegisteredPayments")
   clientPayments        ClientPayment[]   @relation("ClientPayments")
+  billingExtras         ClientBillingExtra[]
+  serviceOfferDecisions ClientServiceOfferDecision[]
   trainingPurchases     TrainingPurchase[]
   supportChatSessions   SupportChatSession[]
 }
@@ -621,4 +623,55 @@ model ClientPayment {
   @@index([idDocumentNumber, paidAt(sort: Desc)])
   @@index([paidAt(sort: Desc)])
   @@index([registeredByUserId])
+}
+
+enum ClientServiceOfferDecisionStatus {
+  ACCEPTED
+  DECLINED
+}
+
+/// Cargo recurrente en la cuenta de cobro mensual del cliente (seguro extra, servicios, etc.).
+model ClientBillingExtra {
+  id          String   @id
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label       String
+  description String?
+  /// insurance | service | other
+  category    String   @default("service")
+  amountCop   Int
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, active])
+}
+
+/// Oferta de servicio adicional (banner en pagos); el cliente acepta o rechaza.
+model ClientServiceOffer {
+  id             String   @id
+  title          String
+  bannerTitle    String
+  bannerSubtitle String?
+  detailBody     String
+  /// [{ "label": "...", "amountCop": 50000, "description": "..." }]
+  extraItems     Json
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  decisions      ClientServiceOfferDecision[]
+}
+
+model ClientServiceOfferDecision {
+  id        String                           @id
+  offerId   String
+  offer     ClientServiceOffer               @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User                             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    ClientServiceOfferDecisionStatus
+  decidedAt DateTime                         @default(now())
+
+  @@unique([userId, offerId])
+  @@index([userId])
 }
