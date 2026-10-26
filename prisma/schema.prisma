@@ -127,6 +127,8 @@ model User {
   serviceOfferDecisions ClientServiceOfferDecision[]
   trainingPurchases     TrainingPurchase[]
   supportChatSessions   SupportChatSession[]
+  gpsReports            ClientGpsReport[]         @relation("ClientGpsReports")
+  uploadedGpsReports    ClientGpsReport[]         @relation("UploadedGpsReports")
 }
 
 enum SupportChatSessionStatus {
@@ -725,4 +727,38 @@ model ClientWorkshopPaymentPlan {
   updatedAt               DateTime @updatedAt
 
   @@index([userId, active])
+}
+
+/// Informe periódico de la empresa GPS asociado al vehículo del cliente.
+model ClientGpsReport {
+  id                 String   @id
+  userId             String
+  user               User     @relation("ClientGpsReports", fields: [userId], references: [id], onDelete: Cascade)
+  uploadedByUserId   String
+  uploadedBy         User     @relation("UploadedGpsReports", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  originalFileName   String
+  storedPath         String
+  mimeType           String
+  sizeBytes          Int
+  plate              String?
+  vin                String?
+  periodFrom         DateTime?
+  periodTo           DateTime?
+  totalDistanceKm    Float?
+  tripPointsCount    Int?
+  avgSpeedKmh        Float?
+  maxSpeedKmh        Float?
+  lastLocation       String?
+  lastLatitude       Float?
+  lastLongitude      Float?
+  lastReportAt       DateTime?
+  highlights         Json     @default("[]")
+  samplePoints       Json     @default("[]")
+  parseWarnings      Json     @default("[]")
+  analystNotes       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([uploadedByUserId])
 }
