@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { mapGpsReport } from "../lib/gpsReportDto.js";
+import { toClientGpsReportView } from "../lib/gpsReportClientView.js";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -23,7 +24,7 @@ clientGpsReportRouter.get("/latest", async (req, res, next) => {
         },
       },
     });
-    res.json({ report: row ? mapGpsReport(row) : null });
+    res.json({ report: row ? toClientGpsReportView(mapGpsReport(row)) : null });
   } catch (err) {
     next(err);
   }
@@ -46,7 +47,7 @@ clientGpsReportRouter.get("/history", async (req, res, next) => {
         },
       },
     });
-    res.json({ reports: rows.map(mapGpsReport) });
+    res.json({ reports: rows.map((row) => toClientGpsReportView(mapGpsReport(row))) });
   } catch (err) {
     next(err);
   }
