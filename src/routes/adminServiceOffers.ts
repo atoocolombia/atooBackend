@@ -18,13 +18,15 @@ adminServiceOffersRouter.get("/", async (_req, res, next) => {
 
 adminServiceOffersRouter.post("/", async (req, res, next) => {
   try {
-    const { title, bannerTitle, bannerSubtitle, detailBody, extraItems, active } = req.body as {
+    const { title, bannerTitle, bannerSubtitle, detailBody, extraItems, active, deferMonths } =
+      req.body as {
       title?: string;
       bannerTitle?: string;
       bannerSubtitle?: string;
       detailBody?: string;
       extraItems?: unknown;
       active?: boolean;
+      deferMonths?: number;
     };
 
     if (!title?.trim() || !bannerTitle?.trim() || !detailBody?.trim()) {
@@ -44,6 +46,7 @@ adminServiceOffersRouter.post("/", async (req, res, next) => {
         bannerSubtitle: bannerSubtitle?.trim() || null,
         detailBody: detailBody.trim(),
         extraItems,
+        deferMonths: Math.max(1, Math.min(60, Math.round(deferMonths ?? 1))),
         active: active ?? true,
       },
     });
