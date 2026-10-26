@@ -44,7 +44,20 @@ usersRouter.use("/:userId", requireAuth, requireSelfUserParam({ allowAdmin: true
 /** Estado del portal cliente según solicitud y entrega. */
 usersRouter.get("/:userId/client-access", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const access = await getClientAccessState(paramUserId(req));
+    const userId = paramUserId(req);
+    const access = await getClientAccessState(userId);
+    const includePayments =
+      req.query.includePayments === "1" || req.query.includePayments === "true";
+    if (includePayments) {
+      try {
+        const summary = await buildClientPaymentSummary(userId);
+        res.json({ ...access, paymentSummary: summary });
+        return;
+      } catch (err) {
+        next(err);
+        return;
+      }
+    }
     res.json(access);
   } catch (err) {
     next(err);
