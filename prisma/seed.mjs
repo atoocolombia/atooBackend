@@ -444,6 +444,63 @@ async function seedClientDemo() {
     },
   });
 
+  await prisma.clientBillingExtra.upsert({
+    where: { id: 'BEXTRA-DEMO-INS' },
+    update: {
+      label: 'Seguro todo riesgo adicional',
+      description: 'Cobertura ampliada acordada con atoo',
+      category: 'insurance',
+      amountCop: 85000,
+      active: true,
+      sortOrder: 0,
+    },
+    create: {
+      id: 'BEXTRA-DEMO-INS',
+      userId: client.id,
+      label: 'Seguro todo riesgo adicional',
+      description: 'Cobertura ampliada acordada con atoo',
+      category: 'insurance',
+      amountCop: 85000,
+      active: true,
+      sortOrder: 0,
+    },
+  });
+
+  await prisma.clientServiceOffer.upsert({
+    where: { id: 'OFFER-DEMO-ASSIST' },
+    update: {
+      title: 'Asistencia vial premium',
+      bannerTitle: '¿Quieres grúa ilimitada y cambio de llanta en ruta?',
+      bannerSubtitle: 'Servicio nuevo para clientes atoo en Bogotá',
+      detailBody:
+        'Incluye grúa sin límite de eventos en el año, cambio de llanta en sitio y batería de arranque.\n\nEl cargo se suma a tu cuenta de cobro mensual mientras mantengas el servicio activo.',
+      extraItems: [
+        {
+          label: 'Asistencia vial premium',
+          amountCop: 45000,
+          description: 'Por mes, incluye grúa y llantas',
+        },
+      ],
+      active: true,
+    },
+    create: {
+      id: 'OFFER-DEMO-ASSIST',
+      title: 'Asistencia vial premium',
+      bannerTitle: '¿Quieres grúa ilimitada y cambio de llanta en ruta?',
+      bannerSubtitle: 'Servicio nuevo para clientes atoo en Bogotá',
+      detailBody:
+        'Incluye grúa sin límite de eventos en el año, cambio de llanta en sitio y batería de arranque.\n\nEl cargo se suma a tu cuenta de cobro mensual mientras mantengas el servicio activo.',
+      extraItems: [
+        {
+          label: 'Asistencia vial premium',
+          amountCop: 45000,
+          description: 'Por mes, incluye grúa y llantas',
+        },
+      ],
+      active: true,
+    },
+  });
+
   console.log('Cliente demo listo: cliente@gmail.com');
 }
 
