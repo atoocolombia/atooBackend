@@ -541,6 +541,24 @@ inspectionsRouter.get("/notifications", async (req, res, next) => {
   }
 });
 
+inspectionsRouter.patch("/notifications/read-all", async (req, res, next) => {
+  try {
+    const userId = paramUserId(req);
+    const user = await requireClientUser(userId);
+    if (!user) {
+      res.status(404).json({ error: "Usuario no encontrado" });
+      return;
+    }
+    await prisma.userNotification.updateMany({
+      where: { userId, read: false },
+      data: { read: true },
+    });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
 inspectionsRouter.patch("/notifications/:notificationId/read", async (req, res, next) => {
   try {
     const userId = paramUserId(req);
