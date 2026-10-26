@@ -236,6 +236,7 @@ function extractFleetSummaryFromText(text: string): {
   maxSpeedKmh: number | null;
   avgSpeedKmh: number | null;
   odometerEndKm: number | null;
+  odometerTotalKm: number | null;
   telemetryHighlights: GpsHighlight[];
 } {
   const kv = parseLabelValueRows(text);
@@ -250,6 +251,7 @@ function extractFleetSummaryFromText(text: string): {
   const routeRaw = pick("longitud de ruta", "longitud ruta", "distancia recorrida");
   const odometerStart = sanitizeOdometerKm(kmFromSummaryValue(pick("odometro comienzo", "odometro inicio")));
   const odometerEnd = sanitizeOdometerKm(kmFromSummaryValue(pick("odometro fin")));
+  const odometerTotalKm = sanitizeKm(kmFromSummaryValue(pick("odometro total")));
   let totalDistanceKm = sanitizeKm(kmFromSummaryValue(routeRaw));
   if (totalDistanceKm == null && odometerStart != null && odometerEnd != null && odometerEnd >= odometerStart) {
     totalDistanceKm = sanitizeKm(odometerEnd - odometerStart);
@@ -268,18 +270,36 @@ function extractFleetSummaryFromText(text: string): {
   if (odometerEnd != null) {
     telemetryHighlights.push({ label: "Kilometraje del vehículo", value: `${odometerEnd} km` });
   }
+  if (odometerTotalKm != null) {
+    telemetryHighlights.push({ label: "Odómetro total", value: `${odometerTotalKm} km` });
+  }
 
   const hasAny =
     totalDistanceKm != null ||
     maxSpeedKmh != null ||
     avgSpeedKmh != null ||
     odometerEnd != null ||
+    odometerTotalKm != null ||
     telemetryHighlights.length > 0;
   if (!hasAny) {
-    return { totalDistanceKm: null, maxSpeedKmh: null, avgSpeedKmh: null, odometerEndKm: null, telemetryHighlights: [] };
+    return {
+      totalDistanceKm: null,
+      maxSpeedKmh: null,
+      avgSpeedKmh: null,
+      odometerEndKm: null,
+      odometerTotalKm: null,
+      telemetryHighlights: [],
+    };
   }
 
-  return { totalDistanceKm, maxSpeedKmh, avgSpeedKmh, odometerEndKm: odometerEnd, telemetryHighlights };
+  return {
+    totalDistanceKm,
+    maxSpeedKmh,
+    avgSpeedKmh,
+    odometerEndKm: odometerEnd,
+    odometerTotalKm,
+    telemetryHighlights,
+  };
 }
 
 function extractFieldsFromProse(text: string): {
