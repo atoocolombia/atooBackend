@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "path";
+import { extractPdfText } from "./extractPdfText.js";
 
 export type GpsHighlight = { label: string; value: string };
 
@@ -139,12 +140,40 @@ function parseDate(raw: string | undefined): Date | null {
   return null;
 }
 
-function readTextFile(filePath: string): { text: string; warnings: string[] } {
+function isPdfBuffer(buf: Buffer): boolean {
+  return buf.length >= 4 && buf.subarray(0, 4).toString("ascii") === "%PDF";
+}
+
+async function readReportText(
+  filePath: string,
+  mimeType?: string,
+): Promise<{ text: string; warnings: string[] }> {
   const warnings: string[] = [];
   const buf = fs.readFileSync(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+
+  if (mimeType === "application/pdf" || ext === ".pdf" || isPdfBuffer(buf)) {
+    try {
+      const text = await extractPdfText(buf);
+      if (!text.trim()) {
+        warnings.push(
+          "El PDF no tiene texto seleccionable. Si es escaneado, pide al proveedor el informe en PDF con texto o en CSV.",
+        );
+      } else {
+        warnings.push("Informe leído desde PDF.");
+      }
+      return { text, warnings };
+    } catch {
+      return {
+        text: "",
+        warnings: ["No se pudo leer el PDF. Verifica que no esté corrupto o protegido."],
+      };
+    }
+  }
+
   if (buf.length >= 2 && buf[0] === 0x50 && buf[1] === 0x4b) {
     warnings.push(
-      "El archivo parece Excel (.xlsx). Exporta como CSV desde la plataforma GPS e intenta de nuevo.",
+      "El archivo parece Excel (.xlsx). Exporta como CSV o PDF desde la plataforma GPS e intenta de nuevo.",
     );
     return { text: "", warnings };
   }
@@ -154,6 +183,87 @@ function readTextFile(filePath: string): { text: string; warnings: string[] } {
     warnings.push("Se leyó el archivo con codificación Latin-1.");
   }
   return { text, warnings };
+}
+
+function extractFieldsFromProse(text: string): {
+  plate: string | null;
+  vin: string | null;
+  totalDistanceKm: number | null;
+  maxSpeedKmh: number | null;
+  avgSpeedKmh: number | null;
+  lastLocation: string | null;
+  lastLatitude: number | null;
+  lastLongitude: number | null;
+  lastReportAt: Date | null;
+  periodFrom: Date | null;
+  periodTo: Date | null;
+} {
+  const norm = stripAccents(text);
+
+  const vinMatch = norm.match(/\b([A-HJ-NPR-Z0-9]{17})\b/i);
+  const plateMatch = norm.match(
+    /(?:placa|matricula|plate|patente)\s*[:#]?\s*([A-Z0-9-]{5,10})/i,
+  );
+  const kmMatch = norm.match(
+    /(?:kilometraje|distancia|recorrido|km recorrido|total km)\s*[:#]?\s*([\d.,]+)\s*(?:km)?/i,
+  );
+  const maxSpeedMatch = norm.match(
+    /(?:vel(?:ocidad)?\.?\s*max(?:ima)?|max speed)\s*[:#]?\s*([\d.,]+)/i,
+  );
+  const avgSpeedMatch = norm.match(
+    /(?:vel(?:ocidad)?\.?\s*prom(?:edio)?|avg speed)\s*[:#]?\s*([\d.,]+)/i,
+  );
+  const addressMatch = norm.match(
+    /(?:direccion|ubicacion|ultima ubicacion|address|location)\s*[:#]?\s*([^\n]{8,120})/i,
+  );
+
+  let lastLatitude: number | null = null;
+  let lastLongitude: number | null = null;
+  const coordMatches = [...norm.matchAll(/(-?\d{1,2}\.\d{4,8})\s*[,;\s]\s*(-?\d{2,3}\.\d{4,8})/g)];
+  if (coordMatches.length > 0) {
+    const last = coordMatches[coordMatches.length - 1]!;
+    lastLatitude = parseNumber(last[1]);
+    lastLongitude = parseNumber(last[2]);
+  }
+
+  const dateCandidates: Date[] = [];
+  for (const m of norm.matchAll(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?/g)) {
+    const d = parseDate(m[0]);
+    if (d) dateCandidates.push(d);
+  }
+  dateCandidates.sort((a, b) => a.getTime() - b.getTime());
+
+  return {
+    plate: plateMatch?.[1]?.trim().toUpperCase() ?? null,
+    vin: vinMatch?.[1]?.trim().toUpperCase() ?? null,
+    totalDistanceKm: kmMatch ? parseNumber(kmMatch[1]) : null,
+    maxSpeedKmh: maxSpeedMatch ? parseNumber(maxSpeedMatch[1]) : null,
+    avgSpeedKmh: avgSpeedMatch ? parseNumber(avgSpeedMatch[1]) : null,
+    lastLocation: addressMatch?.[1]?.trim() ?? null,
+    lastLatitude,
+    lastLongitude,
+    lastReportAt: dateCandidates.length ? dateCandidates[dateCandidates.length - 1]! : null,
+    periodFrom: dateCandidates.length ? dateCandidates[0]! : null,
+    periodTo: dateCandidates.length ? dateCandidates[dateCandidates.length - 1]! : null,
+  };
+}
+
+function mergeProseIntoParsed(parsed: ParsedGpsReport, prose: ReturnType<typeof extractFieldsFromProse>): ParsedGpsReport {
+  return {
+    ...parsed,
+    plate: parsed.plate ?? prose.plate,
+    vin: parsed.vin ?? prose.vin,
+    totalDistanceKm: parsed.totalDistanceKm ?? prose.totalDistanceKm,
+    maxSpeedKmh: parsed.maxSpeedKmh ?? prose.maxSpeedKmh,
+    avgSpeedKmh: parsed.avgSpeedKmh ?? prose.avgSpeedKmh,
+    lastLocation: parsed.lastLocation ?? prose.lastLocation,
+    lastLatitude: parsed.lastLatitude ?? prose.lastLatitude,
+    lastLongitude: parsed.lastLongitude ?? prose.lastLongitude,
+    lastReportAt: parsed.lastReportAt ?? prose.lastReportAt,
+    periodFrom: parsed.periodFrom ?? prose.periodFrom,
+    periodTo: parsed.periodTo ?? prose.periodTo,
+    tripPointsCount: parsed.tripPointsCount > 0 ? parsed.tripPointsCount : prose.lastReportAt ? 1 : 0,
+  };
 }
 
 function parseKeyValueLines(lines: string[]): ParsedGpsReport | null {
@@ -204,22 +314,21 @@ function parseKeyValueLines(lines: string[]): ParsedGpsReport | null {
   };
 }
 
-export function parseGpsReportFile(filePath: string): ParsedGpsReport {
-  const { text, warnings: readWarnings } = readTextFile(filePath);
-  const warnings = [...readWarnings];
+function parseGpsReportText(text: string, warnings: string[]): ParsedGpsReport {
   if (!text.trim()) {
     return emptyParsed(warnings.length ? warnings : ["Archivo vacío o formato no legible."]);
   }
 
-  const lines = text
+  const normalizedText = text.replace(/\r/g, "\n");
+  const lines = normalizedText
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
 
   const kvTry = parseKeyValueLines(lines);
-  if (kvTry && lines.length <= 40) {
+  if (kvTry && (lines.length <= 80 || kvTry.plate || kvTry.vin)) {
     kvTry.warnings = [...warnings, ...kvTry.warnings];
-    return kvTry;
+    return mergeProseIntoParsed(kvTry, extractFieldsFromProse(normalizedText));
   }
 
   const delimiter = detectDelimiter(lines[0] ?? "");
@@ -268,6 +377,16 @@ export function parseGpsReportFile(filePath: string): ParsedGpsReport {
   }
 
   if (rows.length === 0) {
+    const proseOnly = mergeProseIntoParsed(emptyParsed(warnings), extractFieldsFromProse(normalizedText));
+    if (proseOnly.vin || proseOnly.plate || proseOnly.lastLocation || proseOnly.totalDistanceKm) {
+      proseOnly.highlights = [
+        { label: "Fuente", value: "Informe PDF / texto" },
+        ...(proseOnly.totalDistanceKm != null
+          ? [{ label: "Distancia", value: `${proseOnly.totalDistanceKm} km` }]
+          : []),
+      ];
+      return proseOnly;
+    }
     return emptyParsed([...warnings, "No se encontraron filas de datos en el archivo."]);
   }
 
@@ -326,23 +445,34 @@ export function parseGpsReportFile(filePath: string): ParsedGpsReport {
     highlights.push({ label: `Evento: ${ev}`, value: String(count) });
   }
 
-  return {
-    plate,
-    vin,
-    periodFrom: first.at ?? null,
-    periodTo: last.at ?? null,
-    totalDistanceKm,
-    tripPointsCount: rows.length,
-    avgSpeedKmh,
-    maxSpeedKmh,
-    lastLocation: last.address,
-    lastLatitude: last.lat,
-    lastLongitude: last.lng,
-    lastReportAt: last.at ?? null,
-    highlights,
-    samplePoints,
-    warnings,
-  };
+  return mergeProseIntoParsed(
+    {
+      plate,
+      vin,
+      periodFrom: first.at ?? null,
+      periodTo: last.at ?? null,
+      totalDistanceKm,
+      tripPointsCount: rows.length,
+      avgSpeedKmh,
+      maxSpeedKmh,
+      lastLocation: last.address,
+      lastLatitude: last.lat,
+      lastLongitude: last.lng,
+      lastReportAt: last.at ?? null,
+      highlights,
+      samplePoints,
+      warnings,
+    },
+    extractFieldsFromProse(normalizedText),
+  );
+}
+
+export async function parseGpsReportFile(
+  filePath: string,
+  mimeType?: string,
+): Promise<ParsedGpsReport> {
+  const { text, warnings: readWarnings } = await readReportText(filePath, mimeType);
+  return parseGpsReportText(text, [...readWarnings]);
 }
 
 function emptyParsed(warnings: string[]): ParsedGpsReport {
