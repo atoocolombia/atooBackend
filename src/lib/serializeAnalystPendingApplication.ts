@@ -32,6 +32,14 @@ export type AnalystPendingApplicationDto = {
   platformSlot2Complete: boolean;
   platformSlot3Complete: boolean;
   knowledgeTest: AnalystKnowledgeTestSummary | null;
+  backgroundJudicialApproved: boolean | null;
+  backgroundProcuraduriaApproved: boolean | null;
+  backgroundSimitApproved: boolean | null;
+  backgroundJudicialComment: string | null;
+  backgroundProcuraduriaComment: string | null;
+  backgroundSimitComment: string | null;
+  practicalTestSchedulingEnabled: boolean;
+  practicalTestInviteSentAt: string | null;
 };
 
 type Row = Application & {
@@ -81,5 +89,13 @@ export function serializeAnalystPendingApplication(row: Row): AnalystPendingAppl
     platformSlot2Complete: stepMeta.platformSlot2Complete,
     platformSlot3Complete: stepMeta.platformSlot3Complete,
     knowledgeTest: serializeKnowledgeTest(row.user.applicationKnowledgeTest),
+    backgroundJudicialApproved: row.backgroundJudicialApproved,
+    backgroundProcuraduriaApproved: row.backgroundProcuraduriaApproved,
+    backgroundSimitApproved: row.backgroundSimitApproved,
+    backgroundJudicialComment: row.backgroundJudicialComment,
+    backgroundProcuraduriaComment: row.backgroundProcuraduriaComment,
+    backgroundSimitComment: row.backgroundSimitComment,
+    practicalTestSchedulingEnabled: row.practicalTestSchedulingEnabled,
+    practicalTestInviteSentAt: row.practicalTestInviteSentAt?.toISOString() ?? null,
   };
 }

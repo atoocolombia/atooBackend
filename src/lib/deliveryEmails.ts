@@ -160,6 +160,38 @@ export async function sendDeliveryActivationEmail(
   });
 }
 
+function publicAppUrl(path: string): string {
+  const base = (process.env.FRONTEND_URL ?? "https://www.atoo.io").replace(/\/+$/, "");
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+export async function sendPracticalTestInviteEmail(clientName: string, email: string): Promise<void> {
+  const clientEmail = normalizeClientEmail(email);
+  const safeName = escapeHtml(clientName);
+  const loginUrl = publicAppUrl("/");
+  const bookingUrl = publicAppUrl("/prueba-practica");
+  const html = emailLayout(
+    "Agenda tu prueba práctica",
+    `<p style="margin:0 0 12px;color:#374151;line-height:1.6;">
+      Hola ${safeName}, revisamos tus antecedentes y puedes continuar con la <strong>prueba práctica</strong> con un vehículo eléctrico atoo.
+    </p>
+    <p style="margin:0 0 12px;color:#374151;line-height:1.6;">
+      Ingresa con tu correo <strong>${escapeHtml(clientEmail)}</strong> y la contraseña que creaste al registrarte.
+    </p>
+    ${actionButton("Ingresar y agendar cita", bookingUrl)}
+    <p style="margin:16px 0 0;color:#6b7280;font-size:13px;line-height:1.5;">
+      Si no has iniciado sesión antes, entra desde <a href="${escapeHtml(loginUrl)}">atoo.io</a> con el mismo correo.
+    </p>`,
+  );
+
+  await sendTransactionalEmail({
+    to: clientEmail,
+    subject: "Agenda tu prueba práctica — atoo",
+    html,
+    text: `Hola ${clientName}, ingresa con ${clientEmail} y tu contraseña en ${bookingUrl} para agendar tu prueba práctica con vehículo eléctrico.`,
+  });
+}
+
 export async function sendDeliveryConfirmationEmail(
   clientName: string,
   email: string,
