@@ -6,7 +6,11 @@ import fs from "node:fs/promises";
 import { isDocumentKind, isValidationStatus } from "../lib/documentKinds.js";
 import { generateMixedId } from "../lib/generateMixedId.js";
 import { prisma } from "../lib/prisma.js";
-import { createUserDocumentUploader, resolveStoredFile } from "../lib/uploadStorage.js";
+import {
+  createUserDocumentUploader,
+  normalizeUploadedMime,
+  resolveStoredFile,
+} from "../lib/uploadStorage.js";
 import { applyDataTreatmentSignedAiReview, DATA_TREATMENT_DOCUMENT_PUBLIC_SELECT } from "../lib/applyDataTreatmentSignedAiReview.js";
 import { applyIdentityDocAiReview, IDENTITY_DOC_AI_PUBLIC_SELECT } from "../lib/applyIdentityDocAiReview.js";
 import {
@@ -253,9 +257,10 @@ async function saveDocument(req: Request, res: Response, next: NextFunction) {
       return;
     }
     const documentKind = documentKindRaw;
+    const mimeType = normalizeUploadedMime(file.originalname, file.mimetype);
 
     if (documentKind === "dataTreatmentSigned") {
-      if (file.mimetype !== "application/pdf") {
+      if (mimeType !== "application/pdf") {
         await unlinkQuiet(file.path);
         res.status(400).json({
           error: documentMessage("La autorización firmada debe ser un archivo PDF."),
@@ -290,7 +295,7 @@ async function saveDocument(req: Request, res: Response, next: NextFunction) {
         where: { id: existing.id },
         data: {
           originalName: file.originalname.slice(0, 512),
-          mimeType: file.mimetype,
+          mimeType,
           sizeBytes: file.size,
           storedPath,
           validationStatus: DocumentValidationStatus.PENDING,
@@ -343,7 +348,7 @@ async function saveDocument(req: Request, res: Response, next: NextFunction) {
             userId,
             documentKind,
             originalName: file.originalname.slice(0, 512),
-            mimeType: file.mimetype,
+            mimeType,
             sizeBytes: file.size,
             storedPath,
           },

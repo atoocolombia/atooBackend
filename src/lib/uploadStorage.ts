@@ -50,6 +50,13 @@ function userUploadDir(userId: string): string {
   return dir;
 }
 
+/** Algunos navegadores envían PDF como octet-stream; normalizamos para IA y descarga. */
+export function normalizeUploadedMime(originalName: string, mimeType: string): string {
+  if (mimeType === "application/pdf") return mimeType;
+  if (originalName.toLowerCase().endsWith(".pdf")) return "application/pdf";
+  return mimeType;
+}
+
 export function createUserDocumentUploader() {
   const storage = multer.diskStorage({
     destination: (req, _file, cb) => {
@@ -72,6 +79,11 @@ export function createUserDocumentUploader() {
     limits: { fileSize: MAX_BYTES },
     fileFilter: (_req, file, cb) => {
       if (ALLOWED_MIMES.has(file.mimetype)) {
+        cb(null, true);
+        return;
+      }
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (ext === ".pdf" && (file.mimetype === "application/octet-stream" || file.mimetype === "")) {
         cb(null, true);
         return;
       }
