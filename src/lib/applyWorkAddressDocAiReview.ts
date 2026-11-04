@@ -6,12 +6,15 @@ import { platformMessage } from "./userFacingMessage.js";
 import { syncUserIdentityExtractionFromDocuments } from "./syncUserIdentityExtraction.js";
 import {
   collectForbiddenAppKeys,
+  mergePlatformMultiAppPdfMeta,
   mergePlatformPhotoMeta,
   pruneWorkAddressExtractionAfterDocumentDelete,
 } from "./userWorkAddressExtraction.js";
+import { isPlatformMobilityMultiAppPdfKind } from "./platformWorkPhotoKinds.js";
 import {
   verifyBankDocumentAgainstIdentity,
   verifyCreditReportAgainstIdentity,
+  verifyPlatformMobilityMultiAppPdf,
   verifyPlatformWorkCapture,
   verifyUtilityReceiptAddress,
 } from "./verifyWorkAddressDocuments.js";
@@ -93,7 +96,27 @@ export async function applyWorkAddressDocAiReview(documentId: string): Promise<W
   let finalOk = false;
   let rejectMessage = "";
 
-  if (isPlatformWorkDocumentKind(meta.documentKind)) {
+  if (isPlatformMobilityMultiAppPdfKind(meta.documentKind)) {
+    const extractionRow = await prisma.userWorkAddressExtraction.findUnique({
+      where: { userId: meta.userId },
+    });
+    const v = await verifyPlatformMobilityMultiAppPdf(buf, meta.mimeType, {
+      expectedFirstName: firstName,
+      expectedLastName: lastName,
+      applicantDeclaredElectricVehicle: extractionRow?.mobilityDrivenElectricVehicle ?? null,
+    });
+    if (!v.ok) {
+      rejectMessage = v.message;
+    } else {
+      finalOk = true;
+      const merged = mergePlatformMultiAppPdfMeta(extractionRow?.platformCapturesMeta ?? null, v.bySlot);
+      await prisma.userWorkAddressExtraction.upsert({
+        where: { userId: meta.userId },
+        create: { userId: meta.userId, platformCapturesMeta: merged },
+        update: { platformCapturesMeta: merged },
+      });
+    }
+  } else if (isPlatformWorkDocumentKind(meta.documentKind)) {
     const extractionRow = await prisma.userWorkAddressExtraction.findUnique({
       where: { userId: meta.userId },
     });
@@ -182,7 +205,10 @@ export async function applyWorkAddressDocAiReview(documentId: string): Promise<W
   }
 
   if (!finalOk) {
-    if (isPlatformWorkDocumentKind(meta.documentKind)) {
+    if (
+      isPlatformWorkDocumentKind(meta.documentKind) ||
+      isPlatformMobilityMultiAppPdfKind(meta.documentKind)
+    ) {
       await pruneWorkAddressExtractionAfterDocumentDelete(meta.userId, meta.documentKind);
     } else if (meta.documentKind === "bankDocument") {
       await prisma.userWorkAddressExtraction.updateMany({

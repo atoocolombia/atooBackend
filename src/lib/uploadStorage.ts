@@ -20,7 +20,7 @@ export function ensureUploadRoot(): void {
   fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
 }
 
-const MAX_BYTES = Number(process.env.UPLOAD_MAX_BYTES ?? 15 * 1024 * 1024);
+const MAX_BYTES = Number(process.env.UPLOAD_MAX_BYTES ?? 40 * 1024 * 1024);
 
 const ALLOWED_MIMES = new Set(
   (process.env.UPLOAD_ALLOWED_MIMES ??
@@ -32,6 +32,10 @@ const ALLOWED_MIMES = new Set(
       "image/heic",
       "image/heif",
       "application/pdf",
+      "video/mp4",
+      "video/webm",
+      "video/quicktime",
+      "video/3gpp",
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "text/plain",
@@ -84,6 +88,10 @@ export function createUserDocumentUploader() {
       }
       const ext = path.extname(file.originalname).toLowerCase();
       if (ext === ".pdf" && (file.mimetype === "application/octet-stream" || file.mimetype === "")) {
+        cb(null, true);
+        return;
+      }
+      if (file.mimetype.startsWith("video/")) {
         cb(null, true);
         return;
       }
