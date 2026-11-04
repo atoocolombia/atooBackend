@@ -360,6 +360,8 @@ model UserIdentityExtraction {
   licenseMatchesCedula Boolean?
   /// Fecha hasta la cual el pase tiene vigencia autorizada (YYYY-MM-DD cuando se pudo inferir).
   licenseValidUntil    String?
+  /// Restricciones del conductor en la licencia (texto legible del documento).
+  licenseDriverRestrictions String?
 
   /// Documento `Document.id` del frente de identidad validado (referencia a la foto en disco bajo `uploads/`).
   identityPhotoDocumentId String?
