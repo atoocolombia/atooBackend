@@ -133,6 +133,64 @@ model User {
   supportChatSessions   SupportChatSession[]
   gpsReports            ClientGpsReport[]         @relation("ClientGpsReports")
   uploadedGpsReports    ClientGpsReport[]         @relation("UploadedGpsReports")
+  vehicleHistoryEvents  VehicleHistoryEvent[]
+  geofenceExitRequests  GeofenceExitRequest[]
+  geofenceExitReviews   GeofenceExitRequest[]     @relation("GeofenceExitReviewedBy")
+  vehicleHistoryCreated VehicleHistoryEvent[]     @relation("VehicleHistoryCreatedBy")
+}
+
+enum VehicleHistoryEventType {
+  DAMAGE
+  WORKSHOP_VISIT
+  PERIODIC_REVIEW
+  TECHNOMECHANICAL
+  PART_REPLACEMENT
+  OTHER
+}
+
+enum GeofenceExitRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Registro explícito de historial del vehículo (daños, piezas, etc.).
+model VehicleHistoryEvent {
+  id              String                  @id
+  userId          String
+  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventType       VehicleHistoryEventType
+  title           String
+  description     String?
+  occurredAt      DateTime
+  metadata        Json?
+  createdByUserId String?
+  createdBy       User?                   @relation("VehicleHistoryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([userId, occurredAt(sort: Desc)])
+}
+
+/// Solicitud del cliente para salir temporalmente de la geocerca.
+model GeofenceExitRequest {
+  id               String                    @id
+  userId           String
+  user             User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status           GeofenceExitRequestStatus @default(PENDING)
+  reason           String
+  destination      String?
+  requestedFrom    DateTime?
+  requestedUntil   DateTime?
+  reviewedByUserId String?
+  reviewedBy       User?                     @relation("GeofenceExitReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  reviewNotes      String?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status])
 }
 
 enum SupportChatSessionStatus {
