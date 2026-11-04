@@ -1,7 +1,7 @@
 import { ApplicationStatus, DeliveryStatus } from "@prisma/client";
 import { prisma } from "./prisma.js";
 
-export type ClientPortalPhase = "application" | "waiting_delivery" | "dashboard";
+export type ClientPortalPhase = "application" | "practical_test" | "waiting_delivery" | "dashboard";
 
 export interface ClientAccessState {
   phase: ClientPortalPhase;
@@ -14,7 +14,10 @@ export interface ClientAccessState {
 export async function getClientAccessState(userId: string): Promise<ClientAccessState> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { application: true, vehiclePlan: true },
+    include: {
+      application: { include: { practicalTestAppointment: { include: { evaluation: true } } } },
+      vehiclePlan: true,
+    },
   });
 
   if (!user) {
@@ -76,6 +79,28 @@ export async function getClientAccessState(userId: string): Promise<ClientAccess
       deliveryStatus: delivery?.status ?? null,
       message: "Tu solicitud no fue aprobada. Contacta a soporte atoo si necesitas ayuda.",
     };
+  }
+
+  if (app?.status === ApplicationStatus.SUBMITTED && app.practicalTestSchedulingEnabled) {
+    const appt = app.practicalTestAppointment;
+    if (!appt) {
+      return {
+        phase: "practical_test",
+        hasVehicleDelivered: false,
+        applicationStatus: app.status,
+        deliveryStatus: delivery?.status ?? null,
+        message: "Agenda tu prueba práctica con un vehículo eléctrico atoo.",
+      };
+    }
+    if (appt.status === "SCHEDULED" && !appt.evaluation) {
+      return {
+        phase: "waiting_delivery",
+        hasVehicleDelivered: false,
+        applicationStatus: app.status,
+        deliveryStatus: delivery?.status ?? null,
+        message: `Tienes cita de prueba práctica el ${appt.date} a las ${appt.startTime}.`,
+      };
+    }
   }
 
   if (

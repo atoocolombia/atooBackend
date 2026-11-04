@@ -2,6 +2,11 @@ import { ApplicationStatus, DeliveryStatus } from "@prisma/client";
 import { Router } from "express";
 import { mapVehicleDelivery } from "../lib/mapVehicleDelivery.js";
 import { serializeAnalystPendingApplication } from "../lib/serializeAnalystPendingApplication.js";
+import {
+  enablePracticalTestScheduling,
+  patchApplicationBackgroundChecks,
+} from "../lib/practicalTestService.js";
+import type { BackgroundCheckId } from "../lib/backgroundCheckLinks.js";
 import { prisma } from "../lib/prisma.js";
 import {
   createDeliveryFromApplication,
@@ -17,7 +22,7 @@ analystApplicationsRouter.use(requireAuth, requireRole("ANALYST", "ADMIN"));
 analystApplicationsRouter.get("/applications", async (_req, res, next) => {
   try {
     const rows = await prisma.application.findMany({
-      where: { status: ApplicationStatus.SUBMITTED },
+      where: { status: ApplicationStatus.SUBMITTED, practicalTestSchedulingEnabled: false },
       orderBy: { submittedAt: "desc" },
       include: {
         user: {
@@ -34,6 +39,31 @@ analystApplicationsRouter.get("/applications", async (_req, res, next) => {
     next(err);
   }
 });
+
+analystApplicationsRouter.patch("/applications/:applicationId/background-checks", async (req, res, next) => {
+  try {
+    const body = req.body as Partial<
+      Record<BackgroundCheckId, { approved?: boolean | null; comment?: string | null }>
+    >;
+    const updated = await patchApplicationBackgroundChecks(req.params.applicationId, body);
+    res.json(serializeAnalystPendingApplication(updated));
+  } catch (err) {
+    next(err);
+  }
+});
+
+analystApplicationsRouter.post(
+  "/applications/:applicationId/enable-practical-test",
+  async (req, res, next) => {
+    try {
+      const updated = await enablePracticalTestScheduling(req.params.applicationId, req.auth!.id);
+      res.json(serializeAnalystPendingApplication(updated));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "No se pudo habilitar";
+      res.status(400).json({ error: message });
+    }
+  },
+);
 
 analystApplicationsRouter.post("/applications/:applicationId/approve", async (req, res, next) => {
   try {

@@ -15,6 +15,8 @@ import { workshopPortalRouter } from "./routes/workshopPortal.js";
 import { pushRouter } from "./routes/push.js";
 import { advisorDeliveriesRouter } from "./routes/advisorDeliveries.js";
 import { analystApplicationsRouter, deliveryConfirmationRouter } from "./routes/analystApplications.js";
+import { analystPracticalTestRouter } from "./routes/analystPracticalTest.js";
+import { practicalTestClientRouter } from "./routes/practicalTestClient.js";
 import { analystPaymentsRouter } from "./routes/analystPayments.js";
 import { clientPaymentsRouter } from "./routes/clientPayments.js";
 import { clientBillingRouter } from "./routes/clientBilling.js";
@@ -177,6 +179,12 @@ app.use(
   inspectionsRouter,
 );
 app.use(
+  "/api/v1/users/:userId/practical-test",
+  requireAuth,
+  requireSelfUserParam({ allowAdmin: true }),
+  practicalTestClientRouter,
+);
+app.use(
   "/api/v1/workshop/:userId",
   requireAuth,
   requireRole(UserType.WORKSHOP, UserType.ADMIN),
@@ -193,6 +201,7 @@ app.use("/api/v1/admin/support-chats", adminSupportChatsRouter);
 
 app.use("/api/v1/advisor/deliveries", advisorDeliveriesRouter);
 app.use("/api/v1/analyst", analystApplicationsRouter);
+app.use("/api/v1/analyst/practical-test", analystPracticalTestRouter);
 app.use("/api/v1/analyst/payments", analystPaymentsRouter);
 app.use("/api/v1/analyst/billing", analystBillingExtrasRouter);
 app.use("/api/v1/analyst/gps-reports", analystGpsReportsRouter);
