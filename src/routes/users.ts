@@ -3,6 +3,8 @@ import { Router } from "express";
 import { buildClientPaymentSummary } from "../lib/clientPaymentSummary.js";
 import { getClientAccessState } from "../lib/clientAccess.js";
 import { mapUserToProfile } from "../lib/userProfile.js";
+import { patchWorkAddressStepMeta } from "../lib/patchWorkAddressStepMeta.js";
+import { serializeWorkAddressStepMeta } from "../lib/workAddressStepMeta.js";
 import { prisma } from "../lib/prisma.js";
 import { submitApplication } from "../lib/vehicleDeliveryService.js";
 import { requireAuth, requireSelfUserParam } from "../middleware/auth.js";
@@ -28,6 +30,7 @@ const profileSelect = {
   workAddressExtraction: {
     select: {
       utilityServiceAddress: true,
+      mobilityDrivenElectricVehicle: true,
     },
   },
 } as const;
@@ -112,6 +115,75 @@ usersRouter.get("/:userId/application-confirmation", async (req: Request, res: R
       address: profile.address,
       phone: profile.phone,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Paso 3: declaración de conducción de vehículo eléctrico y metadatos ya guardados. */
+usersRouter.get("/:userId/work-address-step-meta", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = paramUserId(req);
+    const row = await prisma.userWorkAddressExtraction.findUnique({
+      where: { userId },
+      select: {
+        mobilityDrivenElectricVehicle: true,
+        mobilityElectricExperienceText: true,
+        platformCapturesMeta: true,
+      },
+    });
+    res.json(serializeWorkAddressStepMeta(row));
+  } catch (err) {
+    next(err);
+  }
+});
+
+usersRouter.patch("/:userId/work-address-step-meta", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = paramUserId(req);
+    const body = req.body as {
+      mobilityDrivenElectricVehicle?: unknown;
+      mobilityElectricExperienceText?: unknown;
+    };
+    const input: {
+      mobilityDrivenElectricVehicle?: boolean;
+      mobilityElectricExperienceText?: string | null;
+    } = {};
+    if (body.mobilityDrivenElectricVehicle !== undefined) {
+      if (typeof body.mobilityDrivenElectricVehicle !== "boolean") {
+        res.status(400).json({ error: "mobilityDrivenElectricVehicle debe ser true o false" });
+        return;
+      }
+      input.mobilityDrivenElectricVehicle = body.mobilityDrivenElectricVehicle;
+    }
+    if (body.mobilityElectricExperienceText !== undefined) {
+      input.mobilityElectricExperienceText =
+        body.mobilityElectricExperienceText === null
+          ? null
+          : typeof body.mobilityElectricExperienceText === "string"
+            ? body.mobilityElectricExperienceText
+            : undefined;
+      if (input.mobilityElectricExperienceText === undefined) {
+        res.status(400).json({ error: "mobilityElectricExperienceText debe ser texto o null" });
+        return;
+      }
+    }
+
+    const result = await patchWorkAddressStepMeta(userId, input);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+
+    const row = await prisma.userWorkAddressExtraction.findUnique({
+      where: { userId },
+      select: {
+        mobilityDrivenElectricVehicle: true,
+        mobilityElectricExperienceText: true,
+        platformCapturesMeta: true,
+      },
+    });
+    res.json(serializeWorkAddressStepMeta(row));
   } catch (err) {
     next(err);
   }
