@@ -40,22 +40,47 @@ export function classifyGeminiError(message: string): GeminiCallFailureKind {
 export function userMessageForGeminiFailure(kind: GeminiCallFailureKind): string {
   switch (kind) {
     case "quota":
-      return "El servicio de revisión está saturado o sin cuota. Inténtalo de nuevo en unos minutos.";
+      return "Hay mucha demanda en la revisión automática. Espera unos minutos y vuelve a intentarlo.";
     case "auth":
-      return "La clave de revisión no es válida. El equipo de atoo debe revisar GEMINI_API_KEY.";
+      return "La revisión automática no está disponible en este momento. Inténtalo más tarde o contáctanos si el problema continúa.";
     case "billing":
-      return "El servicio de revisión requiere facturación activa en Google AI Studio.";
+      return "La revisión automática no está disponible temporalmente. Inténtalo de nuevo más tarde.";
     case "model":
-      return "El modelo de revisión no está disponible. Inténtalo de nuevo en unos minutos.";
+      return "No pudimos completar la revisión en este intento. Vuelve a subir el archivo en unos minutos.";
     case "timeout":
-      return "La revisión tardó demasiado. Sube una imagen más liviana e inténtalo de nuevo.";
+      return "La revisión tardó demasiado. Prueba con un archivo más liviano o una imagen más nítida.";
     case "network":
-      return "No pudimos conectar con el servicio de revisión. Inténtalo de nuevo en unos minutos.";
+      return "Perdimos la conexión con el servicio de revisión. Revisa tu internet e inténtalo de nuevo.";
     case "blocked":
-      return "El servicio bloqueó este archivo por seguridad. Prueba con otra captura más clara.";
+      return "No pudimos procesar este archivo por seguridad. Sube una foto o PDF más claro.";
     default:
-      return "No pudimos completar la revisión automática. Inténtalo de nuevo en unos minutos.";
+      return "No pudimos revisar tu archivo automáticamente. Inténtalo de nuevo en unos minutos.";
   }
+}
+
+/** Log técnico en consola + mensaje corto para el usuario final. */
+export function geminiErrorToUserFacing(err: unknown, logPrefix: string, context?: string): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const kind = classifyGeminiError(raw);
+  const stack = err instanceof Error ? err.stack : undefined;
+  console.error(`${logPrefix} Error comunicación IA`, {
+    context: context ?? null,
+    kind,
+    message: raw,
+    stack,
+  });
+  return userMessageForGeminiFailure(kind);
+}
+
+/** Cuando la IA responde pero no devuelve JSON usable. */
+export function geminiInvalidJsonToUserFacing(err: unknown, logPrefix: string, context?: string): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  console.error(`${logPrefix} Respuesta IA no interpretable`, {
+    context: context ?? null,
+    message: raw,
+    stack: err instanceof Error ? err.stack : undefined,
+  });
+  return "No pudimos interpretar la revisión automática. Vuelve a intentar con el mismo archivo o uno más legible.";
 }
 
 export function extractJsonObjectFromModelText(text: string): Record<string, unknown> {

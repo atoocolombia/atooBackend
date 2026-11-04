@@ -46,15 +46,19 @@ function partFromBuffer(buf: Buffer, mimeType: string): GeminiContentPart | null
   };
 }
 
-const IDENTITY_DOC_PROMPT = `Analiza las imágenes o PDF adjuntos de un **documento de identidad** válido en Colombia. Puede ser **cédula de ciudadanía**, **cédula de extranjería**, **pasaporte** u otro documento oficial de identificación con foto y datos del titular (puede mostrarse solo el frente, o frente y reverso). Extrae únicamente lo legible.
+const IDENTITY_DOC_PROMPT = `Analiza las imágenes o PDF adjuntos de un **documento de identidad**: **cédula colombiana**, **cédula venezolana** o **pasaporte** (frente y/o reverso). Extrae únicamente lo legible.
 
 Responde ÚNICAMENTE un JSON válido (sin markdown, sin texto adicional) con esta forma exacta:
-{"firstName":"string o null","lastName":"string o null","birthDate":"YYYY-MM-DD o null","idDocumentNumber":"string o null","extractionNotesEs":"string breve si hubo dudas"}
+{"firstName":"string o null","lastName":"string o null","birthDate":"YYYY-MM-DD o null","sex":"string o null","bloodType":"string o null","idDocumentNumber":"string o null","extractionNotesEs":"string breve si hubo dudas"}
+
+Documentos admitidos: cédula colombiana, cédula venezolana o pasaporte.
 
 - firstName: nombres de pila como en el documento.
 - lastName: apellidos como en el documento.
 - birthDate: fecha de nacimiento en formato YYYY-MM-DD si se distingue con claridad; si no, null.
-- idDocumentNumber: número o código del documento **exactamente como conviene para ese tipo** (cédula: suele ser solo dígitos; cédula de extranjería o pasaporte: puede incluir letras y dígitos). Sin espacios innecesarios; sin puntos de miles. Si no es legible, null.`;
+- sex: sexo como figure en el documento; null si no aparece o no se lee.
+- bloodType: grupo sanguíneo/RH si figura; null si no aplica o no se lee.
+- idDocumentNumber: número o código del documento **exactamente como conviene para ese tipo** (cédula: suele ser solo dígitos; pasaporte: puede incluir letras y dígitos). Sin espacios innecesarios; sin puntos de miles. Si no es legible, null.`;
 
 const LICENSE_PROMPT = (ctx: {
   firstName: string | null;
@@ -87,6 +91,8 @@ async function extractIdentityDocumentFields(parts: GeminiContentPart[]): Promis
   firstName: string | null;
   lastName: string | null;
   birthDate: string | null;
+  sex: string | null;
+  bloodType: string | null;
   idDocumentNumber: string | null;
 } | null> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
@@ -98,6 +104,8 @@ async function extractIdentityDocumentFields(parts: GeminiContentPart[]): Promis
     firstName: optionalString(parsed.firstName),
     lastName: optionalString(parsed.lastName),
     birthDate: optionalString(parsed.birthDate),
+    sex: optionalString(parsed.sex),
+    bloodType: optionalString(parsed.bloodType),
     idDocumentNumber: normalizeIdDocumentNumber(optionalString(parsed.idDocumentNumber) ?? ""),
   };
 }
@@ -125,6 +133,8 @@ async function extractLicenseFields(
 export type SyncUserIdentityExtractionOptions = {
   /** Si la selfie acaba de validarse, evita una segunda llamada a Gemini con el mismo resultado. */
   selfieComparison?: SelfieIdentityComparison;
+  /** Evita re-extraer identidad cuando `applyIdentityDocAiReview` ya persistió datos del frente. */
+  skipIdentityDocExtraction?: boolean;
 };
 
 /**
@@ -172,6 +182,8 @@ export async function syncUserIdentityExtractionFromDocuments(
     let firstName = existing?.firstName ?? null;
     let lastName = existing?.lastName ?? null;
     let birthDate = existing?.birthDate ?? null;
+    let sex = existing?.sex ?? null;
+    let bloodType = existing?.bloodType ?? null;
     let idDocumentNumber = existing?.idDocumentNumber ?? null;
     let licenseMatchesCedula = existing?.licenseMatchesCedula ?? null;
     let licenseValidUntil = existing?.licenseValidUntil ?? null;
@@ -183,7 +195,7 @@ export async function syncUserIdentityExtractionFromDocuments(
       identityPhotoDocumentId = byKind.idFront.id;
     }
 
-    if (idFront) {
+    if (idFront && !options?.skipIdentityDocExtraction) {
       const idDocParts: GeminiContentPart[] = [];
       const p1 = partFromBuffer(idFront.buf, idFront.mimeType);
       if (p1) idDocParts.push(p1);
@@ -197,6 +209,8 @@ export async function syncUserIdentityExtractionFromDocuments(
           firstName = extracted.firstName ?? firstName;
           lastName = extracted.lastName ?? lastName;
           birthDate = extracted.birthDate ?? birthDate;
+          sex = extracted.sex ?? sex;
+          bloodType = extracted.bloodType ?? bloodType;
           idDocumentNumber = extracted.idDocumentNumber ?? idDocumentNumber;
           logLine("Documento de identidad extraído.", { userId, extracted });
         }
@@ -242,6 +256,8 @@ export async function syncUserIdentityExtractionFromDocuments(
       firstName != null ||
       lastName != null ||
       birthDate != null ||
+      sex != null ||
+      bloodType != null ||
       idDocumentNumber != null ||
       licenseMatchesCedula != null ||
       licenseValidUntil != null ||
@@ -260,6 +276,8 @@ export async function syncUserIdentityExtractionFromDocuments(
         firstName,
         lastName,
         birthDate,
+        sex,
+        bloodType,
         idDocumentNumber,
         licenseMatchesCedula,
         licenseValidUntil,
@@ -271,6 +289,8 @@ export async function syncUserIdentityExtractionFromDocuments(
         firstName,
         lastName,
         birthDate,
+        sex,
+        bloodType,
         idDocumentNumber,
         licenseMatchesCedula,
         licenseValidUntil,

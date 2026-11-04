@@ -1,6 +1,11 @@
 import { DocumentValidationStatus } from "@prisma/client";
 import fs from "node:fs/promises";
-import { extractJsonObjectFromModelText, generateContentWithModelChain, type GeminiContentPart } from "./geminiChainedContent.js";
+import {
+  extractJsonObjectFromModelText,
+  geminiErrorToUserFacing,
+  generateContentWithModelChain,
+  type GeminiContentPart,
+} from "./geminiChainedContent.js";
 import { prisma } from "./prisma.js";
 import { resolveStoredFile } from "./uploadStorage.js";
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
@@ -39,7 +44,9 @@ const USER = {
     "Primero debes subir y validar el frente de tu documento de identidad; después podremos comparar tu selfie.",
   ),
   readIdFail: platformMessage("No pudimos leer el documento de identidad para comparar. Inténtalo de nuevo más tarde."),
-  aiFail: platformMessage("No pudimos completar la comparación con tu selfie. Inténtalo de nuevo en unos minutos."),
+  aiFail: platformMessage(
+    "No pudimos comparar tu selfie con el documento en este momento. Inténtalo de nuevo en unos minutos.",
+  ),
   notSamePerson: documentMessage(
     "La selfie no coincide de forma clara con la foto de tu documento de identidad. Sube una selfie nítida, de frente, con buena luz.",
   ),
@@ -87,7 +94,7 @@ export async function compareSelfieWithIdentityFront(
       distinctCapture: bool(parsed.distinctCapture),
     };
   } catch (err) {
-    console.error(`${LOG_PREFIX} compareSelfieWithIdentityFront`, err);
+    geminiErrorToUserFacing(err, LOG_PREFIX, "compareSelfieWithIdentityFront");
     return null;
   }
 }
