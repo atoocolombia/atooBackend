@@ -1,9 +1,21 @@
 import { GeofenceExitRequestStatus } from "@prisma/client";
 import { Router } from "express";
 import { generateMixedId } from "../lib/generateMixedId.js";
+import { sendGeofenceExitRequestToAnalystEmail } from "../lib/geofenceExitEmail.js";
 import { prisma } from "../lib/prisma.js";
 import { buildClientName } from "../lib/mapVehicleDelivery.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseRequiredCalendarDate(value: unknown): Date | null {
+  if (typeof value !== "string" || !DATE_ONLY.test(value.trim())) {
+    return null;
+  }
+  const d = new Date(`${value.trim()}T12:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
 
 export const clientGeofenceRouter = Router();
 
@@ -36,6 +48,21 @@ clientGeofenceRouter.post("/requests", async (req, res, next) => {
       return;
     }
 
+    const fromDate = parseRequiredCalendarDate(requestedFrom);
+    const untilDate = parseRequiredCalendarDate(requestedUntil);
+    if (!fromDate) {
+      res.status(400).json({ error: "Indica la fecha de salida (formato AAAA-MM-DD)" });
+      return;
+    }
+    if (!untilDate) {
+      res.status(400).json({ error: "Indica la fecha de regreso (formato AAAA-MM-DD)" });
+      return;
+    }
+    if (untilDate.getTime() < fromDate.getTime()) {
+      res.status(400).json({ error: "La fecha de regreso debe ser igual o posterior a la de salida" });
+      return;
+    }
+
     const pending = await prisma.geofenceExitRequest.findFirst({
       where: { userId: req.auth!.id, status: GeofenceExitRequestStatus.PENDING },
     });
@@ -44,16 +71,35 @@ clientGeofenceRouter.post("/requests", async (req, res, next) => {
       return;
     }
 
+    const user = await prisma.user.findUnique({
+      where: { id: req.auth!.id },
+      include: { identityExtraction: true },
+    });
+
     const row = await prisma.geofenceExitRequest.create({
       data: {
         id: generateMixedId(),
         userId: req.auth!.id,
         reason: trimmedReason,
         destination: destination?.trim() || null,
-        requestedFrom: requestedFrom ? new Date(requestedFrom) : null,
-        requestedUntil: requestedUntil ? new Date(requestedUntil) : null,
+        requestedFrom: fromDate,
+        requestedUntil: untilDate,
       },
     });
+
+    if (user) {
+      void sendGeofenceExitRequestToAnalystEmail({
+        clientName: buildClientName(user.identityExtraction, user.email),
+        clientEmail: user.email,
+        reason: trimmedReason,
+        destination: destination?.trim() || null,
+        requestedFrom: fromDate,
+        requestedUntil: untilDate,
+      }).catch((err) => {
+        console.warn("[geofence-exit] No se pudo enviar aviso al analista:", err);
+      });
+    }
+
     res.status(201).json(row);
   } catch (err) {
     next(err);
