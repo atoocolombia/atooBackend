@@ -240,17 +240,36 @@ function landingContentNeedsIncomeCopyRefresh(content) {
   return /Uber|DiDi|Beat|plataformas de transporte/i.test(desc);
 }
 
+/** Teléfono y correo oficiales de la landing (CTA). Se aplican en cada deploy/seed. */
+function applyLandingContactPatch(content) {
+  if (!content || typeof content !== 'object') return content;
+  const contact = content.contact && typeof content.contact === 'object' ? content.contact : {};
+  return {
+    ...content,
+    contact: {
+      ...contact,
+      phone: DEFAULT_LANDING_CONTENT.contact.phone,
+      email: DEFAULT_LANDING_CONTENT.contact.email,
+    },
+  };
+}
+
 async function seedCatalog() {
   const existingLanding = await prisma.landingSettings.findUnique({ where: { id: 'default' } });
-  const landingContent =
+  const landingContent = applyLandingContactPatch(
     existingLanding?.content && !landingContentNeedsIncomeCopyRefresh(existingLanding.content)
       ? existingLanding.content
-      : DEFAULT_LANDING_CONTENT;
+      : DEFAULT_LANDING_CONTENT,
+  );
 
   await prisma.landingSettings.upsert({
     where: { id: 'default' },
     update: { content: landingContent },
-    create: { id: 'default', maxVisibleVehicles: 10, content: DEFAULT_LANDING_CONTENT },
+    create: {
+      id: 'default',
+      maxVisibleVehicles: 10,
+      content: applyLandingContactPatch(DEFAULT_LANDING_CONTENT),
+    },
   });
 
   // Migración puntual del precio por defecto antiguo ($207.000).
