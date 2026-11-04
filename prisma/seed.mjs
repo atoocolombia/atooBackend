@@ -510,6 +510,84 @@ async function seedClientDemo() {
   const workshopDefer = 3;
   const workshopMonthly = Math.ceil(workshopTotal / workshopDefer);
 
+  const demoVehicleHistory = [
+    {
+      id: 'VHIST-DEMO-MULTA',
+      eventType: 'OTHER',
+      title: 'Comparendo — exceso de velocidad',
+      description:
+        'Multa registrada por cámara en Autopista Norte (circulación a 92 km/h en zona de 60 km/h). Valor referencia: $546.000 COP. Pendiente de pago con descuento del 50% si se paga antes del vencimiento.',
+      monthsAgo: 2,
+      metadata: { kind: 'traffic_fine', amountCop: 546_000, status: 'pending_payment', code: 'C29' },
+    },
+    {
+      id: 'VHIST-DEMO-ACCIDENT',
+      eventType: 'DAMAGE',
+      title: 'Colisión leve en intersección',
+      description:
+        'Impacto en cruce de calle 80 con carrera 68. Daño en paragolpes delantero y faro derecho. Reporte FURAT radicado; cobertura todo riesgo aplicada sin lesionados.',
+      monthsAgo: 5,
+      metadata: { kind: 'accident', severity: 'minor', furat: 'DEMO-FURAT-2026-0412' },
+    },
+    {
+      id: 'VHIST-DEMO-PARTS',
+      eventType: 'PART_REPLACEMENT',
+      title: 'Cambio de paragolpes y faro LED',
+      description:
+        'Reemplazo autorizado por aseguradora: paragolpes delantero, soporte de faro y módulo LED derecho. Trabajo en Taller Demo Bogotá; piezas originales Dongfeng Nammi.',
+      monthsAgo: 4,
+      metadata: {
+        kind: 'parts',
+        workshop: 'Taller Demo Bogotá',
+        parts: ['Paragolpes delantero', 'Faro LED derecho', 'Soporte faro'],
+      },
+    },
+    {
+      id: 'VHIST-DEMO-PERIODIC',
+      eventType: 'PERIODIC_REVIEW',
+      title: 'Revisión periódica 10.000 km',
+      description:
+        'Revisión de suspensión, frenos regenerativos, líquido de frenos y software BMS. Resultado satisfactorio; próxima revisión a los 20.000 km.',
+      monthsAgo: 1,
+      metadata: { kind: 'periodic', odometerKm: 10_240 },
+    },
+    {
+      id: 'VHIST-DEMO-TECHNO',
+      eventType: 'TECHNOMECHANICAL',
+      title: 'Revisión tecnomecánica aprobada',
+      description:
+        'RTM vigente hasta noviembre 2027. Sin observaciones en frenos, dirección, luces y emisiones (vehículo eléctrico).',
+      monthsAgo: 6,
+      metadata: { kind: 'technomechanical', result: 'approved', validUntil: '2027-11-30' },
+    },
+  ];
+
+  for (const row of demoVehicleHistory) {
+    const occurredAt = new Date();
+    occurredAt.setMonth(occurredAt.getMonth() - row.monthsAgo);
+    const { monthsAgo: _m, ...data } = row;
+    await prisma.vehicleHistoryEvent.upsert({
+      where: { id: data.id },
+      update: {
+        userId: client.id,
+        eventType: data.eventType.trim(),
+        title: data.title,
+        description: data.description,
+        occurredAt,
+        metadata: data.metadata,
+      },
+      create: {
+        id: data.id,
+        userId: client.id,
+        eventType: data.eventType.trim(),
+        title: data.title,
+        description: data.description,
+        occurredAt,
+        metadata: data.metadata,
+      },
+    });
+  }
+
   await prisma.clientWorkshopPaymentPlan.upsert({
     where: { id: 'WKSHOP-DEMO-BRAKES' },
     update: {
