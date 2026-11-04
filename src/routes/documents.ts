@@ -67,6 +67,7 @@ documentsRouter.get("/", async (req, res, next) => {
         originalName: true,
         mimeType: true,
         sizeBytes: true,
+        signedAt: true,
         createdAt: true,
       },
     });
@@ -294,6 +295,7 @@ async function saveDocument(req: Request, res: Response, next: NextFunction) {
           storedPath,
           validationStatus: DocumentValidationStatus.PENDING,
           validationMessage: null,
+          signedAt: null,
         },
         select: {
           id: true,
@@ -304,6 +306,7 @@ async function saveDocument(req: Request, res: Response, next: NextFunction) {
           originalName: true,
           mimeType: true,
           sizeBytes: true,
+          signedAt: true,
           createdAt: true,
         },
       });
@@ -353,6 +356,7 @@ async function saveDocument(req: Request, res: Response, next: NextFunction) {
             originalName: true,
             mimeType: true,
             sizeBytes: true,
+            signedAt: true,
             createdAt: true,
           },
         });
@@ -446,6 +450,7 @@ documentsRouter.patch("/:documentId/validation", async (req, res, next) => {
         originalName: true,
         mimeType: true,
         sizeBytes: true,
+        signedAt: true,
         createdAt: true,
       },
     });

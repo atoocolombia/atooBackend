@@ -330,6 +330,8 @@ model Document {
   mimeType           String
   sizeBytes          Int
   storedPath         String
+  /// Fecha de firma extraída del PDF (p. ej. autorización de datos firmada).
+  signedAt           DateTime?
   createdAt          DateTime                 @default(now())
 
   @@unique([userId, documentKind])
