@@ -1,6 +1,10 @@
 import { DocumentValidationStatus } from "@prisma/client";
 import fs from "node:fs/promises";
 import {
+  compareIdentityLicenseSelfieSamePerson,
+  compareTwoDocumentPhotosSamePerson,
+} from "./comparePersonPhotos.js";
+import {
   extractJsonObjectFromModelText,
   geminiErrorToUserFacing,
   generateContentWithModelChain,
@@ -48,7 +52,7 @@ const USER = {
     "No pudimos comparar tu selfie con el documento en este momento. Inténtalo de nuevo en unos minutos.",
   ),
   notSamePerson: documentMessage(
-    "La selfie no coincide de forma clara con la foto de tu documento de identidad. Sube una selfie nítida, de frente, con buena luz.",
+    "La selfie no coincide de forma clara con la foto de tu documento de identidad y licencia. Sube una selfie nítida, de frente, con buena luz.",
   ),
   duplicateOfId: documentMessage(
     "La selfie no puede ser la misma imagen o un recorte de la foto del documento. Toma una selfie nueva frente a la cámara (fondo claro).",
@@ -126,6 +130,47 @@ export async function verifySelfieAgainstIdentityDocument(
     idBuf = await fs.readFile(resolveStoredFile(idDoc.storedPath));
   } catch {
     return { ok: false, message: USER.readIdFail };
+  }
+
+  const licenseDoc = await prisma.document.findFirst({
+    where: {
+      userId,
+      documentKind: "licenseFront",
+      validationStatus: DocumentValidationStatus.VALIDATED,
+    },
+    select: { storedPath: true, mimeType: true },
+  });
+
+  if (licenseDoc) {
+    let licenseBuf: Buffer;
+    try {
+      licenseBuf = await fs.readFile(resolveStoredFile(licenseDoc.storedPath));
+    } catch {
+      return { ok: false, message: USER.readIdFail };
+    }
+
+    const triple = await compareIdentityLicenseSelfieSamePerson(
+      idBuf,
+      idDoc.mimeType,
+      licenseBuf,
+      licenseDoc.mimeType,
+      selfieBuffer,
+      selfieMime,
+    );
+    if (!triple) {
+      return { ok: false, message: USER.aiFail };
+    }
+    if (!triple.samePersonAllThree) {
+      const hint = triple.userMessageEs ? documentMessage(triple.userMessageEs) : USER.notSamePerson;
+      return { ok: false, message: hint };
+    }
+    if (!triple.distinctSelfieCapture) {
+      return { ok: false, message: USER.duplicateOfId };
+    }
+    return {
+      ok: true,
+      comparison: { samePerson: true, distinctCapture: true },
+    };
   }
 
   const comparison = await compareSelfieWithIdentityFront(idBuf, idDoc.mimeType, selfieBuffer, selfieMime);

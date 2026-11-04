@@ -74,9 +74,11 @@ Datos del titular según el **documento de identidad** (cédula, cédula de extr
 Tareas:
 1) Determina si la licencia corresponde a la **MISMA PERSONA** que el documento de identidad (coherencia de foto, nombres, apellidos, número o código de identificación si aparece en la licencia).
 2) Extrae la fecha de vigencia del pase: la fecha hasta la cual la licencia está vigente o la fecha de vencimiento principal que figure en el documento. Usa YYYY-MM-DD si es claro; si no puedes determinarla con seguridad, null.
+3) En el reverso debe constar al menos una categoría **B1, B2 o B3** vigente.
+4) Extrae **driverRestrictions** (restricciones del conductor) si son legibles.
 
 Responde ÚNICAMENTE un JSON válido (sin markdown, sin texto adicional) con esta forma exacta:
-{"licenseMatchesIdentityPerson":boolean o null si no hay datos del documento de identidad para comparar,"licenseValidUntil":"YYYY-MM-DD o null","explanationEs":"string breve"}`;
+{"licenseMatchesIdentityPerson":boolean o null si no hay datos del documento de identidad para comparar,"licenseValidUntil":"YYYY-MM-DD o null","driverRestrictions":"string o null","explanationEs":"string breve"}`;
 
 function normalizeIdDocumentNumber(raw: string): string | null {
   const s = raw.trim();
@@ -116,6 +118,7 @@ async function extractLicenseFields(
 ): Promise<{
   licenseMatchesCedula: boolean | null;
   licenseValidUntil: string | null;
+  driverRestrictions: string | null;
 } | null> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey || process.env.DATA_TREATMENT_SKIP_AI_VERIFY === "true") return null;
@@ -127,6 +130,7 @@ async function extractLicenseFields(
       parsed.licenseMatchesIdentityPerson ?? parsed.licenseMatchesCedulaPerson,
     ),
     licenseValidUntil: optionalString(parsed.licenseValidUntil),
+    driverRestrictions: optionalString(parsed.driverRestrictions),
   };
 }
 
@@ -187,6 +191,7 @@ export async function syncUserIdentityExtractionFromDocuments(
     let idDocumentNumber = existing?.idDocumentNumber ?? null;
     let licenseMatchesCedula = existing?.licenseMatchesCedula ?? null;
     let licenseValidUntil = existing?.licenseValidUntil ?? null;
+    let licenseDriverRestrictions = existing?.licenseDriverRestrictions ?? null;
     let identityPhotoDocumentId = existing?.identityPhotoDocumentId ?? null;
     let selfieMatchesIdentityPerson = existing?.selfieMatchesIdentityPerson ?? null;
     let selfieIsDistinctCaptureFromIdentity = existing?.selfieIsDistinctCaptureFromIdentity ?? null;
@@ -227,6 +232,7 @@ export async function syncUserIdentityExtractionFromDocuments(
         if (lic) {
           licenseMatchesCedula = lic.licenseMatchesCedula ?? licenseMatchesCedula;
           licenseValidUntil = lic.licenseValidUntil ?? licenseValidUntil;
+          licenseDriverRestrictions = lic.driverRestrictions ?? licenseDriverRestrictions;
           logLine("Pase/licencia extraída.", { userId, lic });
         }
       }
@@ -261,6 +267,7 @@ export async function syncUserIdentityExtractionFromDocuments(
       idDocumentNumber != null ||
       licenseMatchesCedula != null ||
       licenseValidUntil != null ||
+      licenseDriverRestrictions != null ||
       identityPhotoDocumentId != null ||
       selfieMatchesIdentityPerson != null ||
       selfieIsDistinctCaptureFromIdentity != null;
@@ -281,6 +288,7 @@ export async function syncUserIdentityExtractionFromDocuments(
         idDocumentNumber,
         licenseMatchesCedula,
         licenseValidUntil,
+        licenseDriverRestrictions,
         identityPhotoDocumentId,
         selfieMatchesIdentityPerson,
         selfieIsDistinctCaptureFromIdentity,
@@ -294,6 +302,7 @@ export async function syncUserIdentityExtractionFromDocuments(
         idDocumentNumber,
         licenseMatchesCedula,
         licenseValidUntil,
+        licenseDriverRestrictions,
         identityPhotoDocumentId,
         selfieMatchesIdentityPerson,
         selfieIsDistinctCaptureFromIdentity,
