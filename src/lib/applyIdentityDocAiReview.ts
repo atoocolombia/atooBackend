@@ -1,6 +1,7 @@
 import { DocumentValidationStatus, Prisma } from "@prisma/client";
 import fs from "node:fs/promises";
 import { compareTwoDocumentPhotosSamePerson } from "./comparePersonPhotos.js";
+import { loadValidatedIdentityFaceDocument } from "./loadValidatedIdentityDocument.js";
 import { prisma } from "./prisma.js";
 import { resolveStoredFile } from "./uploadStorage.js";
 import { verifyIdentityDocument } from "./verifyIdentityDocument.js";
@@ -31,23 +32,6 @@ export const IDENTITY_DOC_AI_PUBLIC_SELECT = {
 export type IdentityDocAiPublic = Prisma.DocumentGetPayload<{
   select: typeof IDENTITY_DOC_AI_PUBLIC_SELECT;
 }>;
-
-async function loadValidatedDocumentBuffer(
-  userId: string,
-  documentKind: string,
-): Promise<{ buf: Buffer; mimeType: string } | null> {
-  const doc = await prisma.document.findFirst({
-    where: { userId, documentKind, validationStatus: DocumentValidationStatus.VALIDATED },
-    select: { storedPath: true, mimeType: true },
-  });
-  if (!doc) return null;
-  try {
-    const buf = await fs.readFile(resolveStoredFile(doc.storedPath));
-    return { buf, mimeType: doc.mimeType };
-  } catch {
-    return null;
-  }
-}
 
 /** Lee el archivo guardado, ejecuta la IA y persiste VALIDATED o REJECTED (paso 2 — identificación). */
 export async function applyIdentityDocAiReview(documentId: string): Promise<IdentityDocAiPublic> {
@@ -106,8 +90,8 @@ export async function applyIdentityDocAiReview(documentId: string): Promise<Iden
   let rejectMessage = verification.ok ? "" : verification.message;
   let selfieComparison: SelfieIdentityComparison | undefined;
 
-  if (verification.ok && meta.documentKind === "licenseFront") {
-    const idFront = await loadValidatedDocumentBuffer(meta.userId, "idFront");
+  if (verification.ok && (meta.documentKind === "licenseFront" || meta.documentKind === "licenseBothSides")) {
+    const idFront = await loadValidatedIdentityFaceDocument(meta.userId);
     if (!idFront) {
       finalOk = false;
       rejectMessage = documentMessage(
@@ -157,7 +141,11 @@ export async function applyIdentityDocAiReview(documentId: string): Promise<Iden
   });
 
   if (finalOk) {
-    if (meta.documentKind === "idFront" && verification.ok && verification.identityFrontExtraction) {
+    if (
+      (meta.documentKind === "idFront" || meta.documentKind === "idBothSides") &&
+      verification.ok &&
+      verification.identityFrontExtraction
+    ) {
       const ex = verification.identityFrontExtraction;
       const canonicalId =
         identityRow?.idDocumentNumber?.trim() ||
@@ -188,7 +176,9 @@ export async function applyIdentityDocAiReview(documentId: string): Promise<Iden
     }
 
     if (
-      (meta.documentKind === "licenseFront" || meta.documentKind === "licenseBack") &&
+      (meta.documentKind === "licenseFront" ||
+        meta.documentKind === "licenseBack" ||
+        meta.documentKind === "licenseBothSides") &&
       verification.ok &&
       verification.licenseFrontExtraction
     ) {
@@ -197,23 +187,28 @@ export async function applyIdentityDocAiReview(documentId: string): Promise<Iden
         lic.driverRestrictions?.trim() ||
         identityRow?.licenseDriverRestrictions?.trim() ||
         undefined;
+      const licenseFaceValidated =
+        meta.documentKind === "licenseFront" || meta.documentKind === "licenseBothSides";
       await prisma.userIdentityExtraction.upsert({
         where: { userId: meta.userId },
         create: {
           userId: meta.userId,
-          licenseMatchesCedula: meta.documentKind === "licenseFront" ? true : undefined,
+          licenseMatchesCedula: licenseFaceValidated ? true : undefined,
           licenseValidUntil: lic.licenseValidUntil,
           licenseDriverRestrictions: mergedRestrictions ?? null,
         },
         update: {
-          ...(meta.documentKind === "licenseFront" ? { licenseMatchesCedula: true } : {}),
+          ...(licenseFaceValidated ? { licenseMatchesCedula: true } : {}),
           ...(lic.licenseValidUntil ? { licenseValidUntil: lic.licenseValidUntil } : {}),
           ...(mergedRestrictions ? { licenseDriverRestrictions: mergedRestrictions } : {}),
         },
       });
     }
 
-    if (finalOk && meta.documentKind === "licenseFront") {
+    if (
+      finalOk &&
+      (meta.documentKind === "licenseFront" || meta.documentKind === "licenseBothSides")
+    ) {
       const selfieMeta = await prisma.document.findFirst({
         where: {
           userId: meta.userId,
@@ -245,7 +240,8 @@ export async function applyIdentityDocAiReview(documentId: string): Promise<Iden
 
     await syncUserIdentityExtractionFromDocuments(meta.userId, {
       selfieComparison,
-      skipIdentityDocExtraction: meta.documentKind === "idFront",
+      skipIdentityDocExtraction:
+        meta.documentKind === "idFront" || meta.documentKind === "idBothSides",
     });
   }
   return updated;

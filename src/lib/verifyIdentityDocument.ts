@@ -54,7 +54,21 @@ const USER = {
   idNumberNotLegible: documentMessage(
     "No pudimos leer con claridad el número de identificación en la foto. Sube una imagen más nítida donde se vea completo.",
   ),
+  idBothSidesRequired: documentMessage(
+    "En un solo archivo deben verse el frente (con foto) y el reverso de tu documento de identidad. Puedes usar una foto con las dos caras, un PDF o un escaneo.",
+  ),
+  licenseBothSidesRequired: documentMessage(
+    "En un solo archivo deben verse el frente y el reverso de tu licencia colombiana (incluida categoría B1, B2 o B3 vigente en el reverso).",
+  ),
 } as const;
+
+function isIdFrontLikeKind(documentKind: string): boolean {
+  return documentKind === "idFront" || documentKind === "idBothSides";
+}
+
+function isLicenseFrontLikeKind(documentKind: string): boolean {
+  return documentKind === "licenseFront" || documentKind === "licenseBothSides";
+}
 
 export type IdentityFrontExtraction = {
   firstName: string | null;
@@ -143,6 +157,16 @@ Responde ÚNICAMENTE un JSON válido (sin markdown, sin texto adicional) con est
 allRequirementsMet debe ser true solo si las cuatro condiciones booleanas de validación son true Y idNumberMatchesAuthorization es true.`;
 }
 
+function buildIdBothSidesPrompt(expectedIdDocumentNumber: string): string {
+  return `${buildIdFrontPrompt(expectedIdDocumentNumber)}
+
+Además, este archivo debe incluir **frente y reverso** del mismo documento en un solo envío (foto donde se ven las dos caras, PDF de dos páginas, escaneo con ambas caras, etc.).
+
+5) bothSidesPresent: ¿se distinguen con claridad razonable el **anverso** (con foto del titular) y el **reverso** del documento?
+
+Incluye "bothSidesPresent":boolean en el JSON y allRequirementsMet solo si también bothSidesPresent es true.`;
+}
+
 function parseLicenseFrontExtraction(parsed: Record<string, unknown>): LicenseFrontExtraction {
   const rawId = optionalString(parsed.idDocumentNumber);
   const idDocumentNumber = rawId ? normalizeIdentityDocumentNumberForCompare(rawId) || null : null;
@@ -183,6 +207,18 @@ Responde ÚNICAMENTE JSON válido:
 {"matchesRequestedDocument":boolean,"mainIdentifiersLegible":boolean,"qualityAcceptableForReview":boolean,"dataMatchesIdentityRecord":boolean,"allRequirementsMet":boolean,"firstName":string|null,"lastName":string|null,"idDocumentNumber":string|null,"birthDate":string|null,"bloodType":string|null,"driverRestrictions":string|null,"licenseValidUntil":string|null,"userMessageEs":"string breve en español si algo falla"}
 
 allRequirementsMet true solo si las cuatro validaciones booleanas son true y dataMatchesIdentityRecord es true.`;
+}
+
+function buildLicenseBothSidesPrompt(identity: IdentityRecordForLicenseMatch): string {
+  return `${buildLicenseFrontPrompt(identity)}
+
+El archivo debe mostrar **frente y reverso** de la licencia colombiana en un solo envío (foto con ambas caras, PDF, escaneo).
+
+5) bothSidesPresent: ¿se ven el frente (foto y datos) y el reverso (categorías)?
+6) categoryB1B2B3VigenteLegible: en el reverso, ¿hay **B1, B2 o B3** vigente?
+
+Añade al JSON: "bothSidesPresent":boolean,"categoryB1B2B3VigenteLegible":boolean
+allRequirementsMet true solo si todo lo anterior (incluidas categoría B vigente) es true.`;
 }
 
 function logDiagnostic(message: string, extra?: unknown): void {
@@ -231,11 +267,11 @@ allRequirementsMet debe ser true solo si las otras tres condiciones son true.`;
   };
 
   const intro = byKind[documentKind];
-  if (documentKind === "idFront") {
-    throw new Error("idFront requiere buildIdFrontPrompt con número de autorización");
+  if (isIdFrontLikeKind(documentKind)) {
+    throw new Error("idFront/idBothSides requiere buildIdFrontPrompt con número de autorización");
   }
-  if (documentKind === "licenseFront") {
-    throw new Error("licenseFront requiere buildLicenseFrontPrompt con datos de identidad");
+  if (isLicenseFrontLikeKind(documentKind)) {
+    throw new Error("licenseFront/licenseBothSides requiere buildLicenseFrontPrompt con datos de identidad");
   }
   if (!intro) {
     throw new Error(`Tipo de documento no soportado para IA: ${documentKind}`);
@@ -275,7 +311,7 @@ export async function verifyIdentityDocument(
     return { ok: false, message: USER.aiUnavailable };
   }
 
-  if (documentKind === "idFront") {
+  if (isIdFrontLikeKind(documentKind)) {
     const expectedRaw = options?.expectedIdDocumentNumber?.trim() ?? "";
     const expectedNorm = normalizeIdentityDocumentNumberForCompare(expectedRaw);
     if (!expectedNorm || expectedNorm.length < 5) {
@@ -286,7 +322,7 @@ export async function verifyIdentityDocument(
     }
   }
 
-  if (documentKind === "licenseFront") {
+  if (isLicenseFrontLikeKind(documentKind)) {
     const id = options?.identityForLicense;
     const hasProfile =
       id?.firstName?.trim() &&
@@ -301,12 +337,19 @@ export async function verifyIdentityDocument(
     }
   }
 
+  const expectedIdNorm = normalizeIdentityDocumentNumberForCompare(
+    options?.expectedIdDocumentNumber?.trim() ?? "",
+  );
   const promptText =
     documentKind === "idFront"
-      ? buildIdFrontPrompt(normalizeIdentityDocumentNumberForCompare(options!.expectedIdDocumentNumber!.trim()))
-      : documentKind === "licenseFront"
-        ? buildLicenseFrontPrompt(options!.identityForLicense!)
-        : buildPrompt(documentKind);
+      ? buildIdFrontPrompt(expectedIdNorm)
+      : documentKind === "idBothSides"
+        ? buildIdBothSidesPrompt(expectedIdNorm)
+        : documentKind === "licenseFront"
+          ? buildLicenseFrontPrompt(options!.identityForLicense!)
+          : documentKind === "licenseBothSides"
+            ? buildLicenseBothSidesPrompt(options!.identityForLicense!)
+            : buildPrompt(documentKind);
 
   const parts: GeminiContentPart[] = [
     {
@@ -329,13 +372,21 @@ export async function verifyIdentityDocument(
       documentKind === "licenseBack"
         ? bool(parsed.categoryB1B2B3VigenteLegible) || bool(parsed.categoryB2VigenteLegible)
         : true;
-    const licenseDataOk =
-      documentKind === "licenseFront" ? bool(parsed.dataMatchesIdentityRecord) : true;
-    const idAuthOk =
-      documentKind === "idFront" ? bool(parsed.idNumberMatchesAuthorization) : true;
+    const licenseDataOk = isLicenseFrontLikeKind(documentKind)
+      ? bool(parsed.dataMatchesIdentityRecord)
+      : true;
+    const idAuthOk = isIdFrontLikeKind(documentKind) ? bool(parsed.idNumberMatchesAuthorization) : true;
+    const bothSidesOk =
+      documentKind === "idBothSides" || documentKind === "licenseBothSides"
+        ? bool(parsed.bothSidesPresent)
+        : true;
+    const bClassOnCombined =
+      documentKind === "licenseBothSides"
+        ? bool(parsed.categoryB1B2B3VigenteLegible) || bool(parsed.categoryB2VigenteLegible)
+        : true;
     const allMet = bool(parsed.allRequirementsMet);
 
-    if (documentKind === "idFront") {
+    if (isIdFrontLikeKind(documentKind)) {
       const extraction = parseIdentityFrontExtraction(parsed);
       const expectedNorm = normalizeIdentityDocumentNumberForCompare(
         options?.expectedIdDocumentNumber?.trim() ?? "",
@@ -344,7 +395,15 @@ export async function verifyIdentityDocument(
         extraction.idDocumentNumber != null &&
         identityDocumentNumbersMatch(expectedNorm, extraction.idDocumentNumber);
 
-      if (matchOk && legibleOk && qualityOk && idAuthOk && allMet && serverIdMatch) {
+      if (
+        matchOk &&
+        legibleOk &&
+        qualityOk &&
+        idAuthOk &&
+        bothSidesOk &&
+        allMet &&
+        serverIdMatch
+      ) {
         return { ok: true, identityFrontExtraction: extraction };
       }
 
@@ -358,6 +417,7 @@ export async function verifyIdentityDocument(
           mainIdentifiersLegible: legibleOk,
           qualityAcceptableForReview: qualityOk,
           idNumberMatchesAuthorization: idAuthOk,
+          bothSidesPresent: bothSidesOk,
           allRequirementsMet: allMet,
           serverIdMatch,
         },
@@ -371,13 +431,16 @@ export async function verifyIdentityDocument(
       if (matchOk && legibleOk && qualityOk && extraction.idDocumentNumber && !serverIdMatch) {
         return { ok: false, message: USER.idNumberMismatch };
       }
+      if (documentKind === "idBothSides" && matchOk && legibleOk && qualityOk && !bothSidesOk) {
+        return { ok: false, message: USER.idBothSidesRequired };
+      }
       if (modelHint) {
         return { ok: false, message: documentMessage(modelHint) };
       }
       return { ok: false, message: USER.aiRejectedDoc };
     }
 
-    if (documentKind === "licenseFront") {
+    if (isLicenseFrontLikeKind(documentKind)) {
       const extraction = parseLicenseFrontExtraction(parsed);
       const identity = options!.identityForLicense!;
       const serverData = licenseDataMatchesIdentityRecord(
@@ -386,7 +449,16 @@ export async function verifyIdentityDocument(
         identityDocumentNumbersMatch,
       );
 
-      if (matchOk && legibleOk && qualityOk && licenseDataOk && allMet && serverData.ok) {
+      if (
+        matchOk &&
+        legibleOk &&
+        qualityOk &&
+        licenseDataOk &&
+        bothSidesOk &&
+        bClassOnCombined &&
+        allMet &&
+        serverData.ok
+      ) {
         return { ok: true, licenseFrontExtraction: extraction };
       }
 
@@ -400,6 +472,8 @@ export async function verifyIdentityDocument(
           mainIdentifiersLegible: legibleOk,
           qualityAcceptableForReview: qualityOk,
           dataMatchesIdentityRecord: licenseDataOk,
+          bothSidesPresent: bothSidesOk,
+          categoryB1B2B3VigenteLegible: bClassOnCombined,
           allRequirementsMet: allMet,
           serverDataMatch: serverData.ok,
           serverDataReason: serverData.ok ? null : serverData.reason,
@@ -413,6 +487,12 @@ export async function verifyIdentityDocument(
       }
       if (matchOk && legibleOk && qualityOk && (!licenseDataOk || !serverData.ok)) {
         return { ok: false, message: USER.licenseDataMismatch };
+      }
+      if (documentKind === "licenseBothSides" && matchOk && legibleOk && qualityOk && !bothSidesOk) {
+        return { ok: false, message: USER.licenseBothSidesRequired };
+      }
+      if (documentKind === "licenseBothSides" && matchOk && legibleOk && qualityOk && !bClassOnCombined) {
+        return { ok: false, message: USER.licenseBackB2Required };
       }
       if (modelHint) {
         return { ok: false, message: documentMessage(modelHint) };

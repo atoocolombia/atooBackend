@@ -1,8 +1,10 @@
 export const IDENTITY_AI_DOCUMENT_KINDS = new Set([
   "idFront",
   "idBack",
+  "idBothSides",
   "licenseFront",
   "licenseBack",
+  "licenseBothSides",
   "selfieWhiteBackground",
 ]);
 

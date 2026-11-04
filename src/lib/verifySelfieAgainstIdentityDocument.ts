@@ -1,5 +1,3 @@
-import { DocumentValidationStatus } from "@prisma/client";
-import fs from "node:fs/promises";
 import {
   compareIdentityLicenseSelfieSamePerson,
   compareTwoDocumentPhotosSamePerson,
@@ -10,8 +8,10 @@ import {
   generateContentWithModelChain,
   type GeminiContentPart,
 } from "./geminiChainedContent.js";
-import { prisma } from "./prisma.js";
-import { resolveStoredFile } from "./uploadStorage.js";
+import {
+  loadValidatedIdentityFaceDocument,
+  loadValidatedLicenseFaceDocument,
+} from "./loadValidatedIdentityDocument.js";
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
 
 const LOG_PREFIX = "[selfie-identity-check]";
@@ -112,47 +112,19 @@ export async function verifySelfieAgainstIdentityDocument(
   selfieBuffer: Buffer,
   selfieMime: string,
 ): Promise<VerifySelfieAgainstIdentityResult> {
-  const idDoc = await prisma.document.findFirst({
-    where: {
-      userId,
-      documentKind: "idFront",
-      validationStatus: DocumentValidationStatus.VALIDATED,
-    },
-    select: { storedPath: true, mimeType: true },
-  });
+  const idDoc = await loadValidatedIdentityFaceDocument(userId);
 
   if (!idDoc) {
     return { ok: false, message: USER.needIdFrontFirst };
   }
 
-  let idBuf: Buffer;
-  try {
-    idBuf = await fs.readFile(resolveStoredFile(idDoc.storedPath));
-  } catch {
-    return { ok: false, message: USER.readIdFail };
-  }
-
-  const licenseDoc = await prisma.document.findFirst({
-    where: {
-      userId,
-      documentKind: "licenseFront",
-      validationStatus: DocumentValidationStatus.VALIDATED,
-    },
-    select: { storedPath: true, mimeType: true },
-  });
+  const licenseDoc = await loadValidatedLicenseFaceDocument(userId);
 
   if (licenseDoc) {
-    let licenseBuf: Buffer;
-    try {
-      licenseBuf = await fs.readFile(resolveStoredFile(licenseDoc.storedPath));
-    } catch {
-      return { ok: false, message: USER.readIdFail };
-    }
-
     const triple = await compareIdentityLicenseSelfieSamePerson(
-      idBuf,
+      idDoc.buf,
       idDoc.mimeType,
-      licenseBuf,
+      licenseDoc.buf,
       licenseDoc.mimeType,
       selfieBuffer,
       selfieMime,
@@ -173,7 +145,12 @@ export async function verifySelfieAgainstIdentityDocument(
     };
   }
 
-  const comparison = await compareSelfieWithIdentityFront(idBuf, idDoc.mimeType, selfieBuffer, selfieMime);
+  const comparison = await compareSelfieWithIdentityFront(
+    idDoc.buf,
+    idDoc.mimeType,
+    selfieBuffer,
+    selfieMime,
+  );
   if (!comparison) {
     return { ok: false, message: USER.aiFail };
   }
