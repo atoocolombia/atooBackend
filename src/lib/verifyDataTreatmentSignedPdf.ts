@@ -1,4 +1,5 @@
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
+import { normalizeIdDocumentNumber } from "./clientPayments.js";
 import {
   classifyGeminiError,
   extractJsonObjectFromModelText,
@@ -19,24 +20,36 @@ const USER = {
   aiRejectedDoc: documentMessage(
     "No pudimos validar esta autorización. Comprueba que sea el PDF correcto, con cédula y firma legibles, e inténtalo de nuevo.",
   ),
+  missingId: documentMessage("No pudimos leer tu número de documento en el PDF. Escríbelo de forma legible e inténtalo de nuevo."),
+  missingDate: documentMessage("No pudimos leer la fecha de firma en el PDF. Asegúrate de que esté visible e inténtalo de nuevo."),
 } as const;
 
+export type DataTreatmentVerificationSuccess = {
+  ok: true;
+  idDocumentNumber: string;
+  signedAt: Date;
+};
+
 export type DataTreatmentVerificationResult =
-  | { ok: true }
+  | DataTreatmentVerificationSuccess
   | { ok: false; message: string };
 
-const PROMPT = `Analiza este PDF (Colombia). Debe tratarse de una autorización de tratamiento de datos personales / habeas data (no otro documento).
+const PROMPT = `Analiza este PDF (Colombia). Debe ser la autorización de tratamiento de datos personales / habeas data de atoo (no otro documento).
 
 Evalúa con criterio realista para documentos escaneados o rellenados a mano:
 
 1) documentIsAuthorization: ¿el contenido corresponde a una autorización de tratamiento de datos (no factura, contrato distinto, etc.)?
-2) idNumberLooksComplete: ¿aparece un número de cédula o documento de identidad colombiano plausible (típicamente 6 a 10 dígitos) que parezca completado, no solo guiones o líneas en blanco?
-3) appearsSigned: ¿hay indicios claros de firma (firma manuscrita, imagen de firma, o sección de firma con contenido) o texto que indique firma aceptada?
+2) idNumberLooksComplete: ¿aparece un número de cédula o documento de identidad colombiano plausible (típicamente 6 a 10 dígitos) completado?
+3) appearsSigned: ¿hay indicios claros de firma (firma manuscrita, imagen de firma, o sección de firma con contenido)?
 
-Responde ÚNICAMENTE un JSON válido (sin markdown, sin texto adicional) con esta forma exacta:
-{"documentIsAuthorization":boolean,"idNumberLooksComplete":boolean,"appearsSigned":boolean,"allRequirementsMet":boolean,"userMessageEs":"string breve en español para el usuario si algo falla"}
+Extrae también:
+- idDocumentNumber: solo dígitos del documento de identidad del titular (sin puntos ni espacios). null si no se puede leer.
+- signedDateIso: fecha en que firmó el titular, formato YYYY-MM-DD si es posible; null si no aparece.
 
-allRequirementsMet debe ser true solo si las otras tres condiciones son true.`;
+Responde ÚNICAMENTE un JSON válido (sin markdown) con esta forma exacta:
+{"documentIsAuthorization":boolean,"idNumberLooksComplete":boolean,"appearsSigned":boolean,"allRequirementsMet":boolean,"idDocumentNumber":string|null,"signedDateIso":string|null,"userMessageEs":"string breve en español si algo falla"}
+
+allRequirementsMet debe ser true solo si las tres condiciones de validación son true Y idDocumentNumber tiene entre 6 y 10 dígitos Y signedDateIso es una fecha válida YYYY-MM-DD.`;
 
 function bool(v: unknown): boolean {
   return v === true;
@@ -50,8 +63,27 @@ function logDiagnostic(message: string, extra?: unknown): void {
   }
 }
 
+function parseSignedDateIso(raw: unknown): Date | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const m = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo, d, 12, 0, 0));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo || dt.getUTCDate() !== d) return null;
+  return dt;
+}
+
+function parseIdFromModel(raw: unknown): string | null {
+  if (raw == null) return null;
+  const normalized = normalizeIdDocumentNumber(String(raw));
+  if (normalized.length < 6 || normalized.length > 10) return null;
+  return normalized;
+}
+
 /**
- * Verificación asistida por IA (Google Gemini — capa gratuita con API key en AI Studio).
+ * Verificación asistida por IA (Google Gemini).
  * No sustituye revisión legal humana.
  */
 export async function verifyDataTreatmentSignedPdf(pdfBuffer: Buffer): Promise<DataTreatmentVerificationResult> {
@@ -65,7 +97,11 @@ export async function verifyDataTreatmentSignedPdf(pdfBuffer: Buffer): Promise<D
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     if (process.env.DATA_TREATMENT_SKIP_AI_VERIFY === "true") {
-      return { ok: true };
+      return {
+        ok: true,
+        idDocumentNumber: "1000000001",
+        signedAt: new Date(),
+      };
     }
     logDiagnostic("GEMINI_API_KEY no definida y DATA_TREATMENT_SKIP_AI_VERIFY distinto de true.");
     return { ok: false, message: USER.aiUnavailable };
@@ -90,8 +126,11 @@ export async function verifyDataTreatmentSignedPdf(pdfBuffer: Buffer): Promise<D
     const signedOk = bool(parsed.appearsSigned);
     const allMet = bool(parsed.allRequirementsMet);
 
-    if (docOk && idOk && signedOk && allMet) {
-      return { ok: true };
+    const idDocumentNumber = parseIdFromModel(parsed.idDocumentNumber);
+    const signedAt = parseSignedDateIso(parsed.signedDateIso);
+
+    if (docOk && idOk && signedOk && allMet && idDocumentNumber && signedAt) {
+      return { ok: true, idDocumentNumber, signedAt };
     }
 
     const modelHint =
@@ -104,9 +143,18 @@ export async function verifyDataTreatmentSignedPdf(pdfBuffer: Buffer): Promise<D
         idNumberLooksComplete: idOk,
         appearsSigned: signedOk,
         allRequirementsMet: allMet,
+        idDocumentNumber,
+        signedDateIso: parsed.signedDateIso,
       },
       userMessageEs: modelHint,
     });
+
+    if (!idDocumentNumber) {
+      return { ok: false, message: USER.missingId };
+    }
+    if (!signedAt) {
+      return { ok: false, message: USER.missingDate };
+    }
 
     return { ok: false, message: USER.aiRejectedDoc };
   } catch (err) {

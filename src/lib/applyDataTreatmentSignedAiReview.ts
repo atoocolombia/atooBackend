@@ -4,6 +4,7 @@ import { prisma } from "./prisma.js";
 import { resolveStoredFile } from "./uploadStorage.js";
 import { verifyDataTreatmentSignedPdf } from "./verifyDataTreatmentSignedPdf.js";
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
+import { syncUserIdentityFromDataTreatmentPdf } from "./syncDataTreatmentExtraction.js";
 
 const PDF_MAGIC = Buffer.from("%PDF");
 
@@ -27,6 +28,7 @@ export const DATA_TREATMENT_DOCUMENT_PUBLIC_SELECT = {
   originalName: true,
   mimeType: true,
   sizeBytes: true,
+  signedAt: true,
   createdAt: true,
 } satisfies Prisma.DocumentSelect;
 
@@ -38,7 +40,7 @@ export type DataTreatmentDocumentPublic = Prisma.DocumentGetPayload<{
 export async function applyDataTreatmentSignedAiReview(documentId: string): Promise<DataTreatmentDocumentPublic> {
   const meta = await prisma.document.findUnique({
     where: { id: documentId },
-    select: { storedPath: true, mimeType: true },
+    select: { userId: true, storedPath: true, mimeType: true },
   });
   if (!meta) {
     throw new Error("Documento no encontrado");
@@ -49,6 +51,7 @@ export async function applyDataTreatmentSignedAiReview(documentId: string): Prom
       data: {
         validationStatus: DocumentValidationStatus.REJECTED,
         validationMessage: USER_PDF_EXPECTED,
+        signedAt: null,
       },
       select: DATA_TREATMENT_DOCUMENT_PUBLIC_SELECT,
     });
@@ -64,6 +67,7 @@ export async function applyDataTreatmentSignedAiReview(documentId: string): Prom
       data: {
         validationStatus: DocumentValidationStatus.REJECTED,
         validationMessage: USER_READ_FAIL,
+        signedAt: null,
       },
       select: DATA_TREATMENT_DOCUMENT_PUBLIC_SELECT,
     });
@@ -75,20 +79,37 @@ export async function applyDataTreatmentSignedAiReview(documentId: string): Prom
       data: {
         validationStatus: DocumentValidationStatus.REJECTED,
         validationMessage: USER_PDF_EXPECTED,
+        signedAt: null,
       },
       select: DATA_TREATMENT_DOCUMENT_PUBLIC_SELECT,
     });
   }
 
   const verification = await verifyDataTreatmentSignedPdf(pdfBuf);
-  return prisma.document.update({
+
+  if (!verification.ok) {
+    return prisma.document.update({
+      where: { id: documentId },
+      data: {
+        validationStatus: DocumentValidationStatus.REJECTED,
+        validationMessage: clip(verification.message, 500),
+        signedAt: null,
+      },
+      select: DATA_TREATMENT_DOCUMENT_PUBLIC_SELECT,
+    });
+  }
+
+  const updated = await prisma.document.update({
     where: { id: documentId },
     data: {
-      validationStatus: verification.ok
-        ? DocumentValidationStatus.VALIDATED
-        : DocumentValidationStatus.REJECTED,
-      validationMessage: verification.ok ? null : clip(verification.message, 500),
+      validationStatus: DocumentValidationStatus.VALIDATED,
+      validationMessage: null,
+      signedAt: verification.signedAt,
     },
     select: DATA_TREATMENT_DOCUMENT_PUBLIC_SELECT,
   });
+
+  await syncUserIdentityFromDataTreatmentPdf(meta.userId, verification.idDocumentNumber);
+
+  return updated;
 }
