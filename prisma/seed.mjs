@@ -226,9 +226,9 @@ const DEFAULT_LANDING_CONTENT = {
       'Únete a más de {count} que ya generan ingresos con su vehículo y construyen patrimonio',
     driverCount: '100 socios atoo',
     phoneLabel: 'Llámanos',
-    phone: '55 1234 5678',
+    phone: '+57 313 6768862',
     emailLabel: 'Escríbenos',
-    email: 'hola@atoo.com',
+    email: 'administracion@smartev.com.co',
     trustItems: ['Aprobación en 24h', 'Sin enganche', 'Pagos semanales'],
   },
 };
