@@ -155,7 +155,7 @@ const DEFAULT_LANDING_CONTENT = {
       {
         icon: 'clock',
         title: 'Proceso Rápido',
-        description: 'Aprobación en 24 horas. Mínimos requisitos y trámites simples.',
+        description: 'Mínimos requisitos y trámites simples en línea.',
         gradient: 'from-emerald-500 to-teal-600',
       },
       {
@@ -185,7 +185,7 @@ const DEFAULT_LANDING_CONTENT = {
     titleAfter: '?',
     description: 'En 4 pasos tendrás tu vehículo listo para trabajar y generar ingresos',
     ctaText: 'Iniciar Mi Solicitud',
-    ctaNote: '⚡ Respuesta en menos de 24 horas',
+    ctaNote: '⚡ Solicitud 100% en línea',
     items: [
       {
         number: '01',
@@ -199,7 +199,7 @@ const DEFAULT_LANDING_CONTENT = {
         icon: 'check-circle-2',
         title: 'Aprobación',
         description:
-          'Nuestro equipo revisa tu solicitud y te contacta en menos de 24 horas con una respuesta.',
+          'Nuestro equipo revisa tu solicitud y te contactará por correo cuando tengamos una respuesta.',
       },
       {
         number: '03',
@@ -229,7 +229,7 @@ const DEFAULT_LANDING_CONTENT = {
     phone: '+57 313 6768862',
     emailLabel: 'Escríbenos',
     email: 'administracion@smartev.com.co',
-    trustItems: ['Aprobación en 24h', 'Sin enganche', 'Pagos semanales'],
+    trustItems: ['Sin enganche', 'Pagos semanales', 'Proceso digital'],
   },
 };
 
@@ -240,23 +240,62 @@ function landingContentNeedsIncomeCopyRefresh(content) {
   return /Uber|DiDi|Beat|plataformas de transporte/i.test(desc);
 }
 
-/** Teléfono y correo oficiales de la landing (CTA). Se aplican en cada deploy/seed. */
-function applyLandingContactPatch(content) {
+/** Teléfono, correo y textos de marketing (sin plazos de 24h). Se aplican en cada deploy/seed. */
+function applyLandingContentPatches(content) {
   if (!content || typeof content !== 'object') return content;
   const contact = content.contact && typeof content.contact === 'object' ? content.contact : {};
+  const steps = content.steps && typeof content.steps === 'object' ? content.steps : {};
+  const benefits = content.benefits && typeof content.benefits === 'object' ? content.benefits : {};
+  const benefitItems = Array.isArray(benefits.items) ? benefits.items : [];
+  const stepItems = Array.isArray(steps.items) ? steps.items : [];
+
+  const patchedBenefitItems = benefitItems.map((card) => {
+    if (!card || typeof card !== 'object') return card;
+    if (card.title === 'Proceso Rápido') {
+      return {
+        ...card,
+        description: DEFAULT_LANDING_CONTENT.benefits.items.find((c) => c.title === 'Proceso Rápido')
+          ?.description,
+      };
+    }
+    return card;
+  });
+
+  const patchedStepItems = stepItems.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+    if (item.title === 'Aprobación' || item.number === '02') {
+      return {
+        ...item,
+        description: DEFAULT_LANDING_CONTENT.steps.items.find((s) => s.title === 'Aprobación')
+          ?.description,
+      };
+    }
+    return item;
+  });
+
   return {
     ...content,
+    benefits: {
+      ...benefits,
+      items: patchedBenefitItems.length ? patchedBenefitItems : DEFAULT_LANDING_CONTENT.benefits.items,
+    },
+    steps: {
+      ...steps,
+      ctaNote: DEFAULT_LANDING_CONTENT.steps.ctaNote,
+      items: patchedStepItems.length ? patchedStepItems : DEFAULT_LANDING_CONTENT.steps.items,
+    },
     contact: {
       ...contact,
       phone: DEFAULT_LANDING_CONTENT.contact.phone,
       email: DEFAULT_LANDING_CONTENT.contact.email,
+      trustItems: DEFAULT_LANDING_CONTENT.contact.trustItems,
     },
   };
 }
 
 async function seedCatalog() {
   const existingLanding = await prisma.landingSettings.findUnique({ where: { id: 'default' } });
-  const landingContent = applyLandingContactPatch(
+  const landingContent = applyLandingContentPatches(
     existingLanding?.content && !landingContentNeedsIncomeCopyRefresh(existingLanding.content)
       ? existingLanding.content
       : DEFAULT_LANDING_CONTENT,
@@ -268,7 +307,7 @@ async function seedCatalog() {
     create: {
       id: 'default',
       maxVisibleVehicles: 10,
-      content: applyLandingContactPatch(DEFAULT_LANDING_CONTENT),
+      content: applyLandingContentPatches(DEFAULT_LANDING_CONTENT),
     },
   });
 

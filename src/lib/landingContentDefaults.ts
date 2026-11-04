@@ -109,7 +109,7 @@ export function defaultLandingContent(): LandingContent {
         {
           icon: "clock",
           title: "Proceso Rápido",
-          description: "Aprobación en 24 horas. Mínimos requisitos y trámites simples.",
+          description: "Mínimos requisitos y trámites simples en línea.",
           gradient: "from-emerald-500 to-teal-600",
         },
         {
@@ -139,7 +139,7 @@ export function defaultLandingContent(): LandingContent {
       titleAfter: "?",
       description: "En 4 pasos tendrás tu vehículo listo para trabajar y generar ingresos",
       ctaText: "Iniciar Mi Solicitud",
-      ctaNote: "⚡ Respuesta en menos de 24 horas",
+      ctaNote: "⚡ Solicitud 100% en línea",
       items: [
         {
           number: "01",
@@ -153,7 +153,7 @@ export function defaultLandingContent(): LandingContent {
           icon: "check-circle-2",
           title: "Aprobación",
           description:
-            "Nuestro equipo revisa tu solicitud y te contacta en menos de 24 horas con una respuesta.",
+            "Nuestro equipo revisa tu solicitud y te contactará por correo cuando tengamos una respuesta.",
         },
         {
           number: "03",
@@ -183,7 +183,7 @@ export function defaultLandingContent(): LandingContent {
       phone: "+57 313 6768862",
       emailLabel: "Escríbenos",
       email: "administracion@smartev.com.co",
-      trustItems: ["Aprobación en 24h", "Sin enganche", "Pagos semanales"],
+      trustItems: ["Sin enganche", "Pagos semanales", "Proceso digital"],
     },
   };
 }
