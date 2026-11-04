@@ -70,14 +70,6 @@ export async function getApplicationKnowledgeTestState(userId: string) {
     completed: Boolean(existing),
     includeEvSection: includeEv,
     sections,
-    scores: existing
-      ? {
-          evScore: existing.evScore,
-          vialScore: existing.vialScore,
-          customerServiceScore: existing.customerServiceScore,
-          weightedScore: existing.weightedScore,
-        }
-      : null,
   };
 }
 
