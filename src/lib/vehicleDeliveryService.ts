@@ -31,6 +31,11 @@ export async function submitApplication(userId: string) {
   const user = await loadUserApplicationProfile(userId);
   if (!user) throw new Error("Usuario no encontrado");
 
+  const knowledgeTest = await prisma.userApplicationKnowledgeTest.findUnique({ where: { userId } });
+  if (!knowledgeTest) {
+    throw new Error("Debes completar las evaluaciones teóricas antes de enviar la solicitud");
+  }
+
   const existing = user.application;
   if (existing?.status === ApplicationStatus.APPROVED) {
     return existing;
