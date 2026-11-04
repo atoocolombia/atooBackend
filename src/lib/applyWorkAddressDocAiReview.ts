@@ -190,13 +190,15 @@ export async function applyWorkAddressDocAiReview(documentId: string): Promise<W
           utilityServiceAddress: v.extraction.serviceAddressLine,
           utilityDwellingType: v.extraction.dwellingType,
           utilityAddressComplement: v.extraction.addressComplement,
-          utilityBillHolderMatchesApplicant: true,
+          utilityBillHolderMatchesApplicant: v.extraction.billHolderMatchesApplicant,
+          utilityBillHolderName: v.extraction.billHolderName,
         },
         update: {
           utilityServiceAddress: v.extraction.serviceAddressLine,
           utilityDwellingType: v.extraction.dwellingType,
           utilityAddressComplement: v.extraction.addressComplement,
-          utilityBillHolderMatchesApplicant: true,
+          utilityBillHolderMatchesApplicant: v.extraction.billHolderMatchesApplicant,
+          utilityBillHolderName: v.extraction.billHolderName,
         },
       });
     }
@@ -223,6 +225,7 @@ export async function applyWorkAddressDocAiReview(documentId: string): Promise<W
           utilityDwellingType: null,
           utilityAddressComplement: null,
           utilityBillHolderMatchesApplicant: null,
+          utilityBillHolderName: null,
         },
       });
     }

@@ -68,6 +68,7 @@ export async function pruneWorkAddressExtractionAfterDocumentDelete(
         utilityDwellingType: null,
         utilityAddressComplement: null,
         utilityBillHolderMatchesApplicant: null,
+        utilityBillHolderName: null,
       },
     });
     return;

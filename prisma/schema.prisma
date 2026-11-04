@@ -385,6 +385,8 @@ model UserWorkAddressExtraction {
   /// Torre, apto, interior, casa #, etc.
   utilityAddressComplement String?
   utilityBillHolderMatchesApplicant Boolean?
+  /// Titular del recibo tal como figura (útil si no es el solicitante).
+  utilityBillHolderName String?
 
   /// Declaración del solicitante: ¿ha conducido vehículo eléctrico en apps?
   mobilityDrivenElectricVehicle Boolean?
