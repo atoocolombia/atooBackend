@@ -349,6 +349,10 @@ model UserIdentityExtraction {
   lastName  String?
   /// Fecha de nacimiento (YYYY-MM-DD) si se pudo leer con claridad.
   birthDate        String?
+  /// Sexo según el documento (p. ej. M, F, Masculino, Femenino).
+  sex              String?
+  /// Grupo sanguíneo y RH si figura en el documento (p. ej. O+, AB-).
+  bloodType        String?
   /// Número o código del documento de identidad (p. ej. cédula, CE, pasaporte).
   idDocumentNumber String?
 

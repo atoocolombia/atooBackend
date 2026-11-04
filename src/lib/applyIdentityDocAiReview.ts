@@ -44,6 +44,11 @@ export async function applyIdentityDocAiReview(documentId: string): Promise<Iden
     throw new Error("Este documento no admite revisión automática de identificación");
   }
 
+  const identityRow = await prisma.userIdentityExtraction.findUnique({
+    where: { userId: meta.userId },
+    select: { idDocumentNumber: true },
+  });
+
   let buf: Buffer;
   try {
     buf = await fs.readFile(resolveStoredFile(meta.storedPath));
@@ -59,7 +64,9 @@ export async function applyIdentityDocAiReview(documentId: string): Promise<Iden
     });
   }
 
-  const verification = await verifyIdentityDocument(buf, meta.mimeType, meta.documentKind);
+  const verification = await verifyIdentityDocument(buf, meta.mimeType, meta.documentKind, {
+    expectedIdDocumentNumber: identityRow?.idDocumentNumber,
+  });
 
   let finalOk = verification.ok;
   let rejectMessage = verification.ok ? "" : verification.message;
@@ -84,7 +91,39 @@ export async function applyIdentityDocAiReview(documentId: string): Promise<Iden
     select: IDENTITY_DOC_AI_PUBLIC_SELECT,
   });
   if (finalOk) {
-    await syncUserIdentityExtractionFromDocuments(meta.userId, { selfieComparison });
+    if (meta.documentKind === "idFront" && verification.ok && verification.identityFrontExtraction) {
+      const ex = verification.identityFrontExtraction;
+      const canonicalId =
+        identityRow?.idDocumentNumber?.trim() ||
+        ex.idDocumentNumber ||
+        undefined;
+      await prisma.userIdentityExtraction.upsert({
+        where: { userId: meta.userId },
+        create: {
+          userId: meta.userId,
+          firstName: ex.firstName,
+          lastName: ex.lastName,
+          birthDate: ex.birthDate,
+          sex: ex.sex,
+          bloodType: ex.bloodType,
+          idDocumentNumber: canonicalId ?? null,
+          identityPhotoDocumentId: documentId,
+        },
+        update: {
+          firstName: ex.firstName ?? undefined,
+          lastName: ex.lastName ?? undefined,
+          birthDate: ex.birthDate ?? undefined,
+          sex: ex.sex ?? undefined,
+          bloodType: ex.bloodType ?? undefined,
+          idDocumentNumber: canonicalId ?? undefined,
+          identityPhotoDocumentId: documentId,
+        },
+      });
+    }
+    await syncUserIdentityExtractionFromDocuments(meta.userId, {
+      selfieComparison,
+      skipIdentityDocExtraction: meta.documentKind === "idFront",
+    });
   }
   return updated;
 }

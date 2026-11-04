@@ -1,9 +1,8 @@
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
 import {
-  classifyGeminiError,
   extractJsonObjectFromModelText,
+  geminiErrorToUserFacing,
   generateContentWithModelChain,
-  userMessageForGeminiFailure,
   type GeminiContentPart,
 } from "./geminiChainedContent.js";
 
@@ -267,9 +266,11 @@ export async function verifyJudicialDocument(
 
     return { ok: false, message: USER.simitGeneric };
   } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err);
-    const kind = classifyGeminiError(raw);
-    logDiagnostic(`verifyJudicialDocument fallo (${kind})`, { documentKind, raw });
-    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
+    return {
+      ok: false,
+      message: platformMessage(
+        geminiErrorToUserFacing(err, LOG_PREFIX, `verifyJudicialDocument:${documentKind}`),
+      ),
+    };
   }
 }

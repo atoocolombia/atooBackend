@@ -1,8 +1,9 @@
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
 import { normalizeIdDocumentNumber } from "./clientPayments.js";
 import {
-  classifyGeminiError,
   extractJsonObjectFromModelText,
+  geminiErrorToUserFacing,
+  geminiInvalidJsonToUserFacing,
   generateContentWithModelChain,
   userMessageForGeminiFailure,
   type GeminiContentPart,
@@ -16,7 +17,7 @@ const LOG_PREFIX = "[data-treatment-ai]";
 const USER = {
   pdfTooSmall: documentMessage("El PDF parece vacío o muy dañado. Prueba con otro archivo."),
   pdfTooBig: documentMessage("El archivo es demasiado grande (máx. 12 MB). Reduce el tamaño e inténtalo de nuevo."),
-  aiUnavailable: platformMessage("No pudimos conectar con el servicio de revisión. Inténtalo de nuevo en unos minutos."),
+  aiUnavailable: userMessageForGeminiFailure("auth"),
   aiRejectedDoc: documentMessage(
     "No pudimos validar esta autorización. Comprueba que sea el PDF correcto, con cédula y firma legibles, e inténtalo de nuevo.",
   ),
@@ -104,7 +105,7 @@ export async function verifyDataTreatmentSignedPdf(pdfBuffer: Buffer): Promise<D
       };
     }
     logDiagnostic("GEMINI_API_KEY no definida y DATA_TREATMENT_SKIP_AI_VERIFY distinto de true.");
-    return { ok: false, message: USER.aiUnavailable };
+    return { ok: false, message: platformMessage(USER.aiUnavailable) };
   }
 
   const parts: GeminiContentPart[] = [
@@ -119,7 +120,17 @@ export async function verifyDataTreatmentSignedPdf(pdfBuffer: Buffer): Promise<D
 
   try {
     const { text } = await generateContentWithModelChain(apiKey, parts, LOG_PREFIX);
-    const parsed = extractJsonObjectFromModelText(text);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = extractJsonObjectFromModelText(text);
+    } catch (parseErr) {
+      return {
+        ok: false,
+        message: documentMessage(
+          geminiInvalidJsonToUserFacing(parseErr, LOG_PREFIX, "verifyDataTreatmentSignedPdf"),
+        ),
+      };
+    }
 
     const docOk = bool(parsed.documentIsAuthorization);
     const idOk = bool(parsed.idNumberLooksComplete);
@@ -158,9 +169,11 @@ export async function verifyDataTreatmentSignedPdf(pdfBuffer: Buffer): Promise<D
 
     return { ok: false, message: USER.aiRejectedDoc };
   } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err);
-    const kind = classifyGeminiError(raw);
-    logDiagnostic(`Fallo definitivo tras probar todos los modelos (${kind}).`, { message: raw, err });
-    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
+    return {
+      ok: false,
+      message: platformMessage(
+        geminiErrorToUserFacing(err, LOG_PREFIX, "verifyDataTreatmentSignedPdf"),
+      ),
+    };
   }
 }

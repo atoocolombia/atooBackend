@@ -1,9 +1,8 @@
 import { documentMessage, platformMessage } from "./userFacingMessage.js";
 import {
-  classifyGeminiError,
   extractJsonObjectFromModelText,
+  geminiErrorToUserFacing,
   generateContentWithModelChain,
-  userMessageForGeminiFailure,
   type GeminiContentPart,
 } from "./geminiChainedContent.js";
 
@@ -306,10 +305,10 @@ export async function verifyPlatformWorkCapture(
     const hint = str(parsed.userMessageEs);
     return { ok: false, message: hint ?? USER.platformGeneric };
   } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err);
-    const kind = classifyGeminiError(raw);
-    logDiagnostic(`verifyPlatformWorkCapture fallo (${kind})`, raw);
-    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
+    return {
+      ok: false,
+      message: platformMessage(geminiErrorToUserFacing(err, LOG_PREFIX, "verifyPlatformWorkCapture")),
+    };
   }
 }
 
@@ -368,10 +367,10 @@ export async function verifyBankDocumentAgainstIdentity(
     const hint = str(parsed.userMessageEs);
     return { ok: false, message: hint ?? USER.bankGeneric };
   } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err);
-    const kind = classifyGeminiError(raw);
-    logDiagnostic(`Gemini fallo (${kind})`, raw);
-    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
+    return {
+      ok: false,
+      message: platformMessage(geminiErrorToUserFacing(err, LOG_PREFIX, "verifyBankDocumentAgainstIdentity")),
+    };
   }
 }
 
@@ -421,10 +420,10 @@ export async function verifyUtilityReceiptAddress(
     const hint = str(parsed.userMessageEs);
     return { ok: false, message: hint ?? USER.utilityGeneric };
   } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err);
-    const kind = classifyGeminiError(raw);
-    logDiagnostic(`verifyUtilityReceiptAddress fallo (${kind})`, raw);
-    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
+    return {
+      ok: false,
+      message: platformMessage(geminiErrorToUserFacing(err, LOG_PREFIX, "verifyUtilityReceiptAddress")),
+    };
   }
 }
 
@@ -479,9 +478,11 @@ export async function verifyCreditReportAgainstIdentity(
     const hint = str(parsed.userMessageEs);
     return { ok: false, message: hint ?? USER.creditGeneric };
   } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err);
-    const kind = classifyGeminiError(raw);
-    logDiagnostic(`verifyCreditReportAgainstIdentity fallo (${kind})`, raw);
-    return { ok: false, message: platformMessage(userMessageForGeminiFailure(kind)) };
+    return {
+      ok: false,
+      message: platformMessage(
+        geminiErrorToUserFacing(err, LOG_PREFIX, "verifyCreditReportAgainstIdentity"),
+      ),
+    };
   }
 }

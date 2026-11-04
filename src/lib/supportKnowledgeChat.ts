@@ -3,8 +3,7 @@ import path from "node:path";
 import mammoth from "mammoth";
 import {
   generateContentWithModelChain,
-  userMessageForGeminiFailure,
-  classifyGeminiError,
+  geminiErrorToUserFacing,
   type GeminiContentPart,
 } from "./geminiChainedContent.js";
 import {
@@ -164,8 +163,6 @@ export async function answerSupportKnowledgeQuestion(input: {
     const { text } = await generateContentWithModelChain(apiKey, parts, "[support-chat]");
     return { answer: text.trim(), sources };
   } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err);
-    const kind = classifyGeminiError(raw);
-    throw new Error(userMessageForGeminiFailure(kind));
+    throw new Error(geminiErrorToUserFacing(err, "[support-chat]", "supportKnowledgeChat"));
   }
 }
