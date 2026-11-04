@@ -6,16 +6,51 @@ import {
   type PlatformPhotoMetaEntry,
 } from "./platformSlotAggregate.js";
 import {
+  isPlatformMobilityMultiAppPdfKind,
   isPlatformWorkDocumentKind,
+  PLATFORM_MOBILITY_MULTI_APP_PDF,
   PLATFORM_UI_SLOTS,
   slotKeyFromDocumentKind,
+  type PlatformUiSlot,
 } from "./platformWorkPhotoKinds.js";
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
+export type PlatformCaptureMetaEntry = PlatformPhotoMetaEntry;
+
+function rebuildPlatformCapturesJson(
+  photos: Record<string, PlatformPhotoMetaEntry>,
+  multiAppBySlot: Partial<Record<PlatformUiSlot, PlatformPhotoMetaEntry>>,
+): Prisma.InputJsonValue {
+  const slots: Record<string, ReturnType<typeof aggregatePlatformSlot>> = {};
+  for (const slot of PLATFORM_UI_SLOTS) {
+    slots[String(slot)] = aggregatePlatformSlot(photos, slot, multiAppBySlot);
+  }
+  const bySlot: Record<string, PlatformPhotoMetaEntry> = {};
+  for (const slot of PLATFORM_UI_SLOTS) {
+    if (multiAppBySlot[slot]) bySlot[String(slot)] = multiAppBySlot[slot]!;
+  }
+  return {
+    photos: nextPhotosShape(photos),
+    multiAppPdf: Object.keys(bySlot).length > 0 ? { bySlot } : undefined,
+    slots,
+  } as Prisma.InputJsonValue;
 }
 
-export type PlatformCaptureMetaEntry = PlatformPhotoMetaEntry;
+function nextPhotosShape(photos: Record<string, PlatformPhotoMetaEntry>): Record<string, PlatformPhotoMetaEntry> {
+  return { ...photos };
+}
+
+function serializePhotoEntry(entry: PlatformPhotoMetaEntry): PlatformPhotoMetaEntry {
+  return {
+    appKey: entry.appKey.trim().toLowerCase(),
+    rating: entry.rating,
+    yearsExperience: entry.yearsExperience ?? null,
+    drivenComfortOrBlack: entry.drivenComfortOrBlack,
+    comfortOrBlackNotApplicable: entry.comfortOrBlackNotApplicable,
+    comfortOrBlackTierText: entry.comfortOrBlackTierText ?? null,
+    electricVehicleIndicated: entry.electricVehicleIndicated,
+    nameMatchesCedula: entry.nameMatchesCedula,
+  };
+}
 
 /** Quita metadatos de una foto o campos derivados al borrar ese documento. */
 export async function pruneWorkAddressExtractionAfterDocumentDelete(
@@ -46,17 +81,32 @@ export async function pruneWorkAddressExtractionAfterDocumentDelete(
     return;
   }
 
-  if (isPlatformWorkDocumentKind(documentKind)) {
-    const { photos } = normalizePlatformCapturesMeta(row.platformCapturesMeta);
-    if (!photos[documentKind]) return;
-    const nextPhotos = { ...photos };
-    delete nextPhotos[documentKind];
+  if (documentKind === PLATFORM_MOBILITY_MULTI_APP_PDF) {
+    const { photos, multiAppBySlot } = normalizePlatformCapturesMeta(row.platformCapturesMeta);
+    if (Object.keys(multiAppBySlot).length === 0) return;
+    const payload = rebuildPlatformCapturesJson(photos, {});
     await prisma.userWorkAddressExtraction.update({
       where: { userId },
       data: {
         platformCapturesMeta:
-          Object.keys(nextPhotos).length > 0
-            ? ({ photos: nextPhotos } as Prisma.InputJsonValue)
+          Object.keys(photos).length > 0 ? payload : Prisma.DbNull,
+      },
+    });
+    return;
+  }
+
+  if (isPlatformWorkDocumentKind(documentKind)) {
+    const { photos, multiAppBySlot } = normalizePlatformCapturesMeta(row.platformCapturesMeta);
+    if (!photos[documentKind]) return;
+    const nextPhotos = { ...photos };
+    delete nextPhotos[documentKind];
+    const payload = rebuildPlatformCapturesJson(nextPhotos, multiAppBySlot);
+    await prisma.userWorkAddressExtraction.update({
+      where: { userId },
+      data: {
+        platformCapturesMeta:
+          Object.keys(nextPhotos).length > 0 || Object.keys(multiAppBySlot).length > 0
+            ? payload
             : Prisma.DbNull,
       },
     });
@@ -66,13 +116,11 @@ export async function pruneWorkAddressExtractionAfterDocumentDelete(
 /** Apps ya identificadas en otras ranuras (no en la misma plataforma). */
 export function collectForbiddenAppKeys(meta: unknown, exceptDocumentKind: string): string[] {
   const exceptSlot = slotKeyFromDocumentKind(exceptDocumentKind);
-  if (!exceptSlot) return [];
-
-  const { photos } = normalizePlatformCapturesMeta(meta);
+  const { photos, multiAppBySlot } = normalizePlatformCapturesMeta(meta);
   const keys: string[] = [];
   for (const slot of PLATFORM_UI_SLOTS) {
-    if (slot === exceptSlot) continue;
-    const agg = aggregatePlatformSlot(photos, slot);
+    if (exceptSlot != null && slot === exceptSlot) continue;
+    const agg = aggregatePlatformSlot(photos, slot, multiAppBySlot);
     const appKey = agg.appKey?.trim().toLowerCase();
     if (appKey && appKey !== "unknown") keys.push(appKey);
   }
@@ -84,25 +132,22 @@ export function mergePlatformPhotoMeta(
   documentKind: string,
   entry: PlatformPhotoMetaEntry,
 ): Prisma.InputJsonValue {
-  const { photos } = normalizePlatformCapturesMeta(previous);
+  const { photos, multiAppBySlot } = normalizePlatformCapturesMeta(previous);
   const nextPhotos = { ...photos };
-  nextPhotos[documentKind] = {
-    appKey: entry.appKey.trim().toLowerCase(),
-    rating: entry.rating,
-    yearsExperience: entry.yearsExperience ?? null,
-    drivenComfortOrBlack: entry.drivenComfortOrBlack,
-    comfortOrBlackNotApplicable: entry.comfortOrBlackNotApplicable,
-    comfortOrBlackTierText: entry.comfortOrBlackTierText ?? null,
-    electricVehicleIndicated: entry.electricVehicleIndicated,
-    nameMatchesCedula: entry.nameMatchesCedula,
-  };
+  nextPhotos[documentKind] = serializePhotoEntry(entry);
+  return rebuildPlatformCapturesJson(nextPhotos, multiAppBySlot);
+}
 
-  const slots: Record<string, ReturnType<typeof aggregatePlatformSlot>> = {};
+export function mergePlatformMultiAppPdfMeta(
+  previous: unknown,
+  bySlot: Partial<Record<PlatformUiSlot, PlatformPhotoMetaEntry>>,
+): Prisma.InputJsonValue {
+  const { photos } = normalizePlatformCapturesMeta(previous);
+  const nextMulti: Partial<Record<PlatformUiSlot, PlatformPhotoMetaEntry>> = {};
   for (const slot of PLATFORM_UI_SLOTS) {
-    slots[String(slot)] = aggregatePlatformSlot(nextPhotos, slot);
+    if (bySlot[slot]) nextMulti[slot] = serializePhotoEntry(bySlot[slot]!);
   }
-
-  return { photos: nextPhotos, slots } as Prisma.InputJsonValue;
+  return rebuildPlatformCapturesJson(photos, nextMulti);
 }
 
 /** @deprecated use mergePlatformPhotoMeta */
@@ -113,3 +158,5 @@ export function mergePlatformMeta(
 ): Prisma.InputJsonValue {
   return mergePlatformPhotoMeta(previous, slot, entry);
 }
+
+export { isPlatformMobilityMultiAppPdfKind };

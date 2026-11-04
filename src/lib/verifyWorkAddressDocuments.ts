@@ -6,18 +6,21 @@ import {
   generateContentWithModelChain,
   type GeminiContentPart,
 } from "./geminiChainedContent.js";
+import { inlineMimeForGeminiMedia } from "./geminiMediaMimes.js";
+import type { PlatformUiSlot } from "./platformWorkPhotoKinds.js";
 
 const LOG_PREFIX = "[work-address-docs-ai]";
-const MAX_BYTES = 15 * 1024 * 1024;
+const MAX_BYTES = 40 * 1024 * 1024;
 const MIN_BYTES = 400;
-
-const GEMINI_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif"]);
 
 const USER = {
   fileTooSmall: documentMessage("El archivo parece vacío o dañado. Prueba con otra foto o PDF."),
-  fileTooBig: documentMessage("El archivo es demasiado grande (máx. 15 MB). Reduce el tamaño e inténtalo de nuevo."),
+  fileTooBig: documentMessage("El archivo es demasiado grande (máx. 40 MB). Reduce el tamaño e inténtalo de nuevo."),
   mimeUnsupported: documentMessage(
-    "Formato no admitido para la revisión automática. Usa PDF o imagen JPG, PNG, GIF o WebP.",
+    "Formato no admitido. Usa imagen, PDF o video MP4/WebM de pantallas de la app.",
+  ),
+  multiAppPdfGeneric: documentMessage(
+    "No pudimos leer perfiles de conductor en el PDF. Sube capturas más legibles o un PDF con pantallas de las apps.",
   ),
   aiUnavailable: platformMessage("No pudimos conectar con el servicio de revisión. Inténtalo de nuevo en unos minutos."),
   needIdentityFirst: documentMessage(
@@ -98,12 +101,6 @@ function logDiagnostic(message: string, extra?: unknown): void {
   }
 }
 
-function inlineMimeForGemini(mimeType: string): string | null {
-  if (mimeType === "application/pdf") return "application/pdf";
-  if (GEMINI_IMAGE_MIMES.has(mimeType)) return mimeType;
-  return null;
-}
-
 function skipAi(): boolean {
   return !process.env.GEMINI_API_KEY?.trim() || process.env.DATA_TREATMENT_SKIP_AI_VERIFY === "true";
 }
@@ -146,6 +143,7 @@ function buildPlatformPrompt(ctx: {
   expectedLastName: string;
   forbiddenAppLabels: string;
   applicantDeclaredElectricVehicle: boolean | null;
+  mediaDescription: string;
 }): string {
   const electricLine =
     ctx.applicantDeclaredElectricVehicle === true
@@ -158,7 +156,7 @@ function buildPlatformPrompt(ctx: {
       ? `Si en esta captura SÍ puedes leer de qué app es (marca o logo claro) y el identificador coincide con alguna de estas apps ya usadas en otra captura del mismo trámite, debe ser **distinta**: ${ctx.forbiddenAppLabels}. Si no ves la marca de la app, no aplica esta comparación.`
       : "No hay otras capturas con app identificada aún; no aplica comparar marcas entre capturas.";
 
-  return `Analiza esta imagen o PDF (primera página si es PDF). Debe ser una **captura de pantalla** típica de **conductor en plataforma de movilidad** (perfil, calificaciones, cuenta, etc.).
+  return `Analiza este archivo (${ctx.mediaDescription}). Debe mostrar pantallas de **conductor en plataforma de movilidad** (perfil, calificaciones, cuenta, etc.). Si es PDF revisa todas las páginas; si es video usa los fotogramas legibles.
 
 **Validación por una sola imagen:** el solicitante puede subir **varias capturas de la misma app**. En **esta** imagen solo extrae lo que se vea legible; **no exijas** que aparezcan a la vez nombre, calificación, años de experiencia y categorías Comfort/Black.
 
@@ -281,8 +279,15 @@ export async function verifyPlatformWorkCapture(
 ): Promise<PlatformVerifyResult> {
   if (buffer.length < MIN_BYTES) return { ok: false, message: USER.fileTooSmall };
   if (buffer.length > MAX_BYTES) return { ok: false, message: USER.fileTooBig };
-  const inlineMime = inlineMimeForGemini(mimeType);
+  const inlineMime = inlineMimeForGeminiMedia(mimeType);
   if (!inlineMime) return { ok: false, message: USER.mimeUnsupported };
+
+  const mediaDescription =
+    inlineMime === "application/pdf"
+      ? "PDF"
+      : inlineMime.startsWith("video/")
+        ? "video"
+        : "imagen";
 
   /** Con IA omitida no comparamos contra la BD: no exigir nombres aquí (pueden faltar si no hubo extracción). */
   if (skipAi()) {
@@ -317,6 +322,7 @@ export async function verifyPlatformWorkCapture(
         expectedLastName: ln || "—",
         forbiddenAppLabels,
         applicantDeclaredElectricVehicle: ctx.applicantDeclaredElectricVehicle,
+        mediaDescription,
       }),
     },
   ];
@@ -428,6 +434,176 @@ export async function verifyPlatformWorkCapture(
   }
 }
 
+export type MultiAppPdfVerifyResult =
+  | { ok: true; bySlot: Partial<Record<PlatformUiSlot, PlatformCaptureExtraction>> }
+  | { ok: false; message: string };
+
+function platformExtractionFromModelBlock(
+  block: Record<string, unknown>,
+): PlatformCaptureExtraction | null {
+  const ratingValue = num(block.ratingValue);
+  const ratingOk = bool(block.ratingStrictlyGreaterThan4) && ratingValue != null && ratingValue > 4;
+  const comfortTier = bool(block.comfortOrBlackTierVisible);
+  const comfortText = str(block.comfortOrBlackTierText);
+  const comfortSeen = comfortTier || Boolean(comfortText);
+  const comfortNa = bool(block.comfortOrBlackNotApplicable);
+  const yearsOk = bool(block.yearsExperienceVisible);
+  const nameVisible = bool(block.nameVisibleInCapture);
+  const nameOk = bool(block.nameMatchesCedula);
+  const ratingVisible = bool(block.ratingVisible);
+  const electricOk = bool(block.electricVehicleIndicated);
+
+  const rawBrand = str(block.appBrandNormalized)?.toLowerCase().replace(/\s+/g, "") || "unknown";
+  const appKey = rawBrand && rawBrand !== "unknown" ? rawBrand : "unknown";
+
+  const hasUsefulPartial =
+    (nameVisible && nameOk) ||
+    (ratingVisible && ratingOk) ||
+    yearsOk ||
+    comfortSeen ||
+    comfortNa ||
+    electricOk;
+
+  if (!hasUsefulPartial) return null;
+
+  return {
+    appKey,
+    rating: ratingVisible && ratingOk && ratingValue != null ? ratingValue : null,
+    yearsExperience: yearsOk ? str(block.yearsExperienceText) : null,
+    drivenComfortOrBlack: comfortSeen,
+    comfortOrBlackNotApplicable: comfortNa,
+    comfortOrBlackTierText: comfortText,
+    electricVehicleIndicated: electricOk,
+    nameMatchesCedula: nameVisible && nameOk,
+  };
+}
+
+function buildMultiAppPdfPrompt(ctx: {
+  expectedFirstName: string;
+  expectedLastName: string;
+  applicantDeclaredElectricVehicle: boolean | null;
+}): string {
+  const electricLine =
+    ctx.applicantDeclaredElectricVehicle === true
+      ? "El solicitante declaró que SÍ ha conducido vehículo eléctrico."
+      : "Declaración EV: no exijas indicadores de eléctrico salvo que aparezcan.";
+  return `Analiza este PDF. Puede reunir capturas de **una o varias apps** de conductor (Uber, DiDi, etc.) para la misma persona.
+
+Titular esperado (cédula):
+- Nombres: "${ctx.expectedFirstName}"
+- Apellidos: "${ctx.expectedLastName}"
+
+${electricLine}
+
+Por cada app distinta que identifiques en el documento, extrae datos parciales (no exijas todo en un bloque). Asigna suggestedSlot 1, 2 o 3 para la primera, segunda y tercera app distinta (máximo 3).
+
+Responde ÚNICAMENTE JSON válido:
+{"apps":[{"suggestedSlot":number|null,"appBrandNormalized":"string","nameVisibleInCapture":boolean,"nameMatchesCedula":boolean,"ratingVisible":boolean,"ratingValue":number|null,"ratingStrictlyGreaterThan4":boolean,"yearsExperienceVisible":boolean,"yearsExperienceText":string|null,"comfortOrBlackTierVisible":boolean,"comfortOrBlackTierText":string|null,"comfortOrBlackNotApplicable":boolean,"electricVehicleIndicated":boolean}],"qualityAcceptableForReview":boolean,"userMessageEs":"string|null"}
+
+qualityAcceptableForReview true si al menos una app aporta datos útiles legibles.`;
+}
+
+export async function verifyPlatformMobilityMultiAppPdf(
+  buffer: Buffer,
+  mimeType: string,
+  ctx: {
+    expectedFirstName: string;
+    expectedLastName: string;
+    applicantDeclaredElectricVehicle: boolean | null;
+  },
+): Promise<MultiAppPdfVerifyResult> {
+  if (buffer.length < MIN_BYTES) return { ok: false, message: USER.fileTooSmall };
+  if (buffer.length > MAX_BYTES) return { ok: false, message: USER.fileTooBig };
+  if (mimeType !== "application/pdf") return { ok: false, message: USER.mimeUnsupported };
+
+  if (skipAi()) {
+    return {
+      ok: true,
+      bySlot: {
+        1: {
+          appKey: "dev-multi",
+          rating: 4.9,
+          yearsExperience: "N/D",
+          drivenComfortOrBlack: false,
+          comfortOrBlackNotApplicable: true,
+          comfortOrBlackTierText: null,
+          electricVehicleIndicated: ctx.applicantDeclaredElectricVehicle === true,
+          nameMatchesCedula: true,
+        },
+      },
+    };
+  }
+
+  const fn = ctx.expectedFirstName.trim();
+  const ln = ctx.expectedLastName.trim();
+  if (!fn && !ln) return { ok: false, message: USER.needIdentityFirst };
+
+  const parts: GeminiContentPart[] = [
+    { inlineData: { mimeType: "application/pdf", data: buffer.toString("base64") } },
+    {
+      text: buildMultiAppPdfPrompt({
+        expectedFirstName: fn || "—",
+        expectedLastName: ln || "—",
+        applicantDeclaredElectricVehicle: ctx.applicantDeclaredElectricVehicle,
+      }),
+    },
+  ];
+
+  try {
+    const apiKey = process.env.GEMINI_API_KEY!.trim();
+    const { text } = await generateContentWithModelChain(apiKey, parts, LOG_PREFIX);
+    const parsed = extractJsonObjectFromModelText(text);
+    if (!bool(parsed.qualityAcceptableForReview)) {
+      const hint = str(parsed.userMessageEs);
+      return { ok: false, message: hint ?? USER.multiAppPdfGeneric };
+    }
+
+    const appsRaw = parsed.apps;
+    if (!Array.isArray(appsRaw) || appsRaw.length === 0) {
+      return { ok: false, message: USER.multiAppPdfGeneric };
+    }
+
+    const bySlot: Partial<Record<PlatformUiSlot, PlatformCaptureExtraction>> = {};
+    const usedSlots = new Set<PlatformUiSlot>();
+
+    for (const item of appsRaw) {
+      if (!isRecord(item)) continue;
+      const extraction = platformExtractionFromModelBlock(item);
+      if (!extraction) continue;
+
+      const suggested = num(item.suggestedSlot);
+      let slotKey: PlatformUiSlot | null =
+        suggested === 1 || suggested === 2 || suggested === 3 ? (suggested as PlatformUiSlot) : null;
+      if (!slotKey) {
+        for (const s of [1, 2, 3] as const) {
+          if (!usedSlots.has(s) && !bySlot[s]) {
+            slotKey = s;
+            break;
+          }
+        }
+      }
+      if (!slotKey || bySlot[slotKey]) continue;
+      usedSlots.add(slotKey);
+      bySlot[slotKey] = extraction;
+    }
+
+    if (Object.keys(bySlot).length === 0) {
+      return { ok: false, message: USER.multiAppPdfGeneric };
+    }
+
+    return { ok: true, bySlot };
+  } catch (err) {
+    return {
+      ok: false,
+      message: platformMessage(geminiErrorToUserFacing(err, LOG_PREFIX, "verifyPlatformMobilityMultiAppPdf")),
+    };
+  }
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
 export async function verifyBankDocumentAgainstIdentity(
   buffer: Buffer,
   mimeType: string,
@@ -435,7 +611,7 @@ export async function verifyBankDocumentAgainstIdentity(
 ): Promise<BankVerifyResult> {
   if (buffer.length < MIN_BYTES) return { ok: false, message: USER.fileTooSmall };
   if (buffer.length > MAX_BYTES) return { ok: false, message: USER.fileTooBig };
-  const inlineMime = inlineMimeForGemini(mimeType);
+  const inlineMime = inlineMimeForGeminiMedia(mimeType);
   if (!inlineMime) return { ok: false, message: USER.mimeUnsupported };
 
   if (skipAi()) {
@@ -497,7 +673,7 @@ export async function verifyUtilityReceiptAddress(
 ): Promise<UtilityVerifyResult> {
   if (buffer.length < MIN_BYTES) return { ok: false, message: USER.fileTooSmall };
   if (buffer.length > MAX_BYTES) return { ok: false, message: USER.fileTooBig };
-  const inlineMime = inlineMimeForGemini(mimeType);
+  const inlineMime = inlineMimeForGeminiMedia(mimeType);
   if (!inlineMime) return { ok: false, message: USER.mimeUnsupported };
 
   const fn = ctx.expectedFirstName.trim();
@@ -586,7 +762,7 @@ export async function verifyCreditReportAgainstIdentity(
 ): Promise<BankVerifyResult> {
   if (buffer.length < MIN_BYTES) return { ok: false, message: USER.fileTooSmall };
   if (buffer.length > MAX_BYTES) return { ok: false, message: USER.fileTooBig };
-  const inlineMime = inlineMimeForGemini(mimeType);
+  const inlineMime = inlineMimeForGeminiMedia(mimeType);
   if (!inlineMime) return { ok: false, message: USER.mimeUnsupported };
 
   if (skipAi()) {

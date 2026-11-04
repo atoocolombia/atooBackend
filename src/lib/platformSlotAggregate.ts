@@ -1,7 +1,8 @@
 import type { PlatformCaptureExtraction } from "./verifyWorkAddressDocuments.js";
 import {
   PLATFORM_UI_SLOTS,
-  platformPhotoKindsForSlot,
+  parsePlatformPhotoKind,
+  slotHasAnyAttachmentInPhotos,
   type PlatformUiSlot,
 } from "./platformWorkPhotoKinds.js";
 
@@ -16,7 +17,6 @@ export type PlatformSlotAggregate = {
   yearsExperience: string | null;
   drivenComfortOrBlack: boolean;
   comfortOrBlackNotApplicable: boolean;
-  /** Texto leído (Comfort, Black, Premium, etc.) cuando aparece en alguna captura. */
   comfortOrBlackTierText: string | null;
   electricVehicleIndicated: boolean;
 };
@@ -51,36 +51,54 @@ function readPhotoEntry(raw: unknown): PlatformPhotoMetaEntry | null {
   };
 }
 
-/** Normaliza meta antigua (plano por kind) o nueva ({ photos, slots }). */
 export function normalizePlatformCapturesMeta(meta: unknown): {
   photos: Record<string, PlatformPhotoMetaEntry>;
+  multiAppBySlot: Partial<Record<PlatformUiSlot, PlatformPhotoMetaEntry>>;
 } {
-  if (!isRecord(meta)) {
-    return { photos: {} };
-  }
-  if (isRecord(meta.photos)) {
-    const photos: Record<string, PlatformPhotoMetaEntry> = {};
-    for (const [k, v] of Object.entries(meta.photos)) {
-      const entry = readPhotoEntry(v);
-      if (entry) photos[k] = entry;
-    }
-    return { photos };
-  }
   const photos: Record<string, PlatformPhotoMetaEntry> = {};
-  for (const [k, v] of Object.entries(meta)) {
-    if (k === "slots") continue;
+  const multiAppBySlot: Partial<Record<PlatformUiSlot, PlatformPhotoMetaEntry>> = {};
+
+  if (!isRecord(meta)) {
+    return { photos, multiAppBySlot };
+  }
+
+  const photoSource = isRecord(meta.photos) ? meta.photos : meta;
+  for (const [k, v] of Object.entries(photoSource)) {
+    if (k === "slots" || k === "multiAppPdf") continue;
     const entry = readPhotoEntry(v);
     if (entry) photos[k] = entry;
   }
-  return { photos };
+
+  if (isRecord(meta.multiAppPdf) && isRecord(meta.multiAppPdf.bySlot)) {
+    for (const slot of PLATFORM_UI_SLOTS) {
+      const entry = readPhotoEntry(meta.multiAppPdf.bySlot[String(slot)]);
+      if (entry) multiAppBySlot[slot] = entry;
+    }
+  }
+
+  return { photos, multiAppBySlot };
+}
+
+function entriesForPlatformSlot(
+  photos: Record<string, PlatformPhotoMetaEntry>,
+  slot: PlatformUiSlot,
+  multiAppBySlot: Partial<Record<PlatformUiSlot, PlatformPhotoMetaEntry>>,
+): PlatformPhotoMetaEntry[] {
+  const entries: PlatformPhotoMetaEntry[] = [];
+  for (const [kind, entry] of Object.entries(photos)) {
+    const parsed = parsePlatformPhotoKind(kind);
+    if (parsed?.slot === slot && entry) entries.push(entry);
+  }
+  if (multiAppBySlot[slot]) entries.push(multiAppBySlot[slot]!);
+  return entries;
 }
 
 export function aggregatePlatformSlot(
   photos: Record<string, PlatformPhotoMetaEntry>,
   slot: PlatformUiSlot,
+  multiAppBySlot: Partial<Record<PlatformUiSlot, PlatformPhotoMetaEntry>> = {},
 ): PlatformSlotAggregate {
-  const kinds = platformPhotoKindsForSlot(slot);
-  const entries = kinds.map((k) => photos[k]).filter(Boolean) as PlatformPhotoMetaEntry[];
+  const entries = entriesForPlatformSlot(photos, slot, multiAppBySlot);
 
   let appKey = "unknown";
   for (const e of entries) {
@@ -166,11 +184,11 @@ export function buildAllPlatformSlotStatuses(
   meta: unknown,
   applicantDeclaredElectricVehicle: boolean | null,
 ): Record<PlatformUiSlot, PlatformSlotStatus> {
-  const { photos } = normalizePlatformCapturesMeta(meta);
+  const { photos, multiAppBySlot } = normalizePlatformCapturesMeta(meta);
   const out = {} as Record<PlatformUiSlot, PlatformSlotStatus>;
   for (const slot of PLATFORM_UI_SLOTS) {
-    const aggregate = aggregatePlatformSlot(photos, slot);
-    const hasAnyPhoto = platformPhotoKindsForSlot(slot).some((k) => photos[k]);
+    const aggregate = aggregatePlatformSlot(photos, slot, multiAppBySlot);
+    const hasAnyPhoto = slotHasAnyAttachmentInPhotos(photos, slot) || Boolean(multiAppBySlot[slot]);
     if (!hasAnyPhoto) {
       out[slot] = { complete: false, missing: ["al menos una captura de esta plataforma"], aggregate: null };
     } else {

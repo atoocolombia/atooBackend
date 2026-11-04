@@ -1,14 +1,14 @@
-import { allPlatformPhotoDocumentKinds, isPlatformWorkDocumentKind } from "./platformWorkPhotoKinds.js";
-
-export const WORK_ADDRESS_AI_DOCUMENT_KINDS = new Set([
-  ...allPlatformPhotoDocumentKinds(),
-  "bankDocument",
-  "creditReport",
-  "utilityAddressReceipt",
-]);
+import { isPlatformWorkDocumentKind } from "./platformWorkPhotoKinds.js";
 
 export function isWorkAddressAiDocumentKind(value: string): boolean {
-  return WORK_ADDRESS_AI_DOCUMENT_KINDS.has(value);
+  if (
+    value === "bankDocument" ||
+    value === "creditReport" ||
+    value === "utilityAddressReceipt"
+  ) {
+    return true;
+  }
+  return isPlatformWorkDocumentKind(value);
 }
 
 export { isPlatformWorkDocumentKind };
