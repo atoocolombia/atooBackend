@@ -1,6 +1,7 @@
 import { ApplicationStatus, DeliveryStatus } from "@prisma/client";
 import { Router } from "express";
-import { mapVehicleDelivery, buildClientName } from "../lib/mapVehicleDelivery.js";
+import { mapVehicleDelivery } from "../lib/mapVehicleDelivery.js";
+import { serializeAnalystPendingApplication } from "../lib/serializeAnalystPendingApplication.js";
 import { prisma } from "../lib/prisma.js";
 import {
   createDeliveryFromApplication,
@@ -18,21 +19,17 @@ analystApplicationsRouter.get("/applications", async (_req, res, next) => {
     const rows = await prisma.application.findMany({
       where: { status: ApplicationStatus.SUBMITTED },
       orderBy: { submittedAt: "desc" },
-      include: { user: { include: { identityExtraction: true, workAddressExtraction: true } } },
+      include: {
+        user: {
+          include: {
+            identityExtraction: true,
+            workAddressExtraction: true,
+            applicationKnowledgeTest: true,
+          },
+        },
+      },
     });
-    res.json(
-      rows.map((row) => ({
-        id: row.id,
-        userId: row.userId,
-        status: row.status,
-        submittedAt: row.submittedAt.toISOString(),
-        clientName: buildClientName(row.user.identityExtraction, row.user.email),
-        idDocumentNumber: row.user.identityExtraction?.idDocumentNumber ?? null,
-        email: row.user.email,
-        phone: row.user.phone,
-        address: row.user.workAddressExtraction?.utilityServiceAddress ?? null,
-      })),
-    );
+    res.json(rows.map(serializeAnalystPendingApplication));
   } catch (err) {
     next(err);
   }
