@@ -159,20 +159,16 @@ const MISSING_LABELS: Record<string, string> = {
   name: "nombre que coincida con tu cédula",
   rating: "calificación mayor a 4",
   years: "años o tiempo de experiencia",
-  electric: "indicio de vehículo eléctrico (declaraste que sí conduces EV)",
 };
 
 export function evaluatePlatformSlot(
   aggregate: PlatformSlotAggregate,
-  applicantDeclaredElectricVehicle: boolean | null,
+  _applicantDeclaredElectricVehicle: boolean | null,
 ): PlatformSlotStatus {
   const missing: string[] = [];
   if (!aggregate.nameMatchesCedula) missing.push(MISSING_LABELS.name);
   if (aggregate.rating == null) missing.push(MISSING_LABELS.rating);
   if (!aggregate.yearsExperience) missing.push(MISSING_LABELS.years);
-  if (applicantDeclaredElectricVehicle === true && !aggregate.electricVehicleIndicated) {
-    missing.push(MISSING_LABELS.electric);
-  }
   return {
     complete: missing.length === 0,
     missing,

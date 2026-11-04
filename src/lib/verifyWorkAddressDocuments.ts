@@ -124,6 +124,7 @@ export type WorkAddressUtilityExtraction = {
   dwellingType: string | null;
   addressComplement: string | null;
   billHolderName: string | null;
+  billHolderMatchesApplicant: boolean;
 };
 
 export type PlatformVerifyResult =
@@ -147,7 +148,7 @@ function buildPlatformPrompt(ctx: {
 }): string {
   const electricLine =
     ctx.applicantDeclaredElectricVehicle === true
-      ? "El solicitante declaró que SÍ ha conducido vehículo eléctrico: la captura debe mostrar indicios legibles (texto EV, eléctrico, categoría verde, etc.) si la app los expone."
+      ? "El solicitante ya declaró experiencia con vehículo eléctrico en el formulario: **no exijas** indicios de EV en la captura; si aparecen, regístralos en electricVehicleIndicated."
       : ctx.applicantDeclaredElectricVehicle === false
         ? "El solicitante declaró que NO ha conducido vehículo eléctrico: no exijas indicadores de EV."
         : "Declaración de vehículo eléctrico no disponible; no exijas indicadores de EV.";
@@ -202,7 +203,7 @@ Responde ÚNICAMENTE un JSON válido (sin markdown, sin texto adicional) con est
 function buildUtilityPrompt(ctx: { expectedFirstName: string; expectedLastName: string }): string {
   return `Analiza este archivo (imagen o PDF). Debe ser un **recibo de servicio público o privado** (luz, agua, gas, internet, administración, etc.) en Colombia con **dirección de servicio** legible.
 
-El recibo debe estar a nombre del **titular del trámite** (persona que solicita), no de un tercero sin relación:
+Compara el titular del recibo con el solicitante (referencia, no bloquea si es otra persona):
 - Nombres de pila: "${ctx.expectedFirstName}"
 - Apellidos: "${ctx.expectedLastName}"
 
@@ -221,7 +222,7 @@ Evalúa:
 Responde ÚNICAMENTE JSON válido:
 {"looksLikeUtilityOrHousingReceipt":boolean,"addressLegible":boolean,"billHolderNameMatchesApplicant":boolean,"billHolderName":"string|null","serviceAddressLine":"string","dwellingType":"CASA|APARTAMENTO|OTRO|null","addressComplement":"string|null","qualityAcceptableForReview":boolean,"allRequirementsMet":boolean,"userMessageEs":"string breve en español si algo falla"}
 
-allRequirementsMet true solo si es recibo pertinente, dirección legible, titular coincide con el solicitante y serviceAddressLine no está vacía.`;
+allRequirementsMet true si es recibo pertinente, dirección legible y serviceAddressLine no está vacía (aunque el titular sea otra persona distinta al solicitante).`;
 }
 
 function buildBankPrompt(ctx: { expectedFirstName: string; expectedLastName: string; expectedIdNumber: string | null }): string {
@@ -485,7 +486,7 @@ function buildMultiAppPdfPrompt(ctx: {
 }): string {
   const electricLine =
     ctx.applicantDeclaredElectricVehicle === true
-      ? "El solicitante declaró que SÍ ha conducido vehículo eléctrico."
+      ? "Experiencia EV ya declarada en formulario; no exijas indicios en el PDF."
       : "Declaración EV: no exijas indicadores de eléctrico salvo que aparezcan.";
   return `Analiza este PDF. Puede reunir capturas de **una o varias apps** de conductor (Uber, DiDi, etc.) para la misma persona.
 
@@ -690,6 +691,7 @@ export async function verifyUtilityReceiptAddress(
         dwellingType: null,
         addressComplement: null,
         billHolderName: null,
+        billHolderMatchesApplicant: true,
       },
     };
   }
@@ -705,7 +707,6 @@ export async function verifyUtilityReceiptAddress(
     const parsed = extractJsonObjectFromModelText(text);
 
     const line = str(parsed.serviceAddressLine);
-    const allMet = bool(parsed.allRequirementsMet);
     const holderName = str(parsed.billHolderName);
     const holderOkModel = bool(parsed.billHolderNameMatchesApplicant);
     const holderOkServer =
@@ -715,17 +716,16 @@ export async function verifyUtilityReceiptAddress(
           personNamesMatch(ln, holderName) ||
           personNamesMatch(`${fn} ${ln}`.trim(), holderName)));
 
-    if (
-      allMet &&
+    const receiptOk =
       bool(parsed.looksLikeUtilityOrHousingReceipt) &&
       bool(parsed.addressLegible) &&
-      line &&
-      holderOkServer &&
-      bool(parsed.qualityAcceptableForReview)
-    ) {
+      Boolean(line) &&
+      bool(parsed.qualityAcceptableForReview);
+
+    if (receiptOk) {
       const complement = str(parsed.addressComplement);
       const dwelling = str(parsed.dwellingType);
-      const fullLine = complement ? `${line} — ${complement}` : line;
+      const fullLine = complement ? `${line} — ${complement}` : line!;
       return {
         ok: true,
         extraction: {
@@ -733,12 +733,9 @@ export async function verifyUtilityReceiptAddress(
           dwellingType: dwelling,
           addressComplement: complement,
           billHolderName: holderName,
+          billHolderMatchesApplicant: holderOkServer,
         },
       };
-    }
-
-    if (bool(parsed.looksLikeUtilityOrHousingReceipt) && !holderOkServer) {
-      return { ok: false, message: USER.utilityNameMismatch };
     }
 
     if (!line || !bool(parsed.addressLegible)) {
