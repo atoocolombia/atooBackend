@@ -6,7 +6,7 @@ import { platformMessage } from "./userFacingMessage.js";
 import { syncUserIdentityExtractionFromDocuments } from "./syncUserIdentityExtraction.js";
 import {
   collectForbiddenAppKeys,
-  mergePlatformMeta,
+  mergePlatformPhotoMeta,
   pruneWorkAddressExtractionAfterDocumentDelete,
 } from "./userWorkAddressExtraction.js";
 import {
@@ -57,7 +57,9 @@ export async function applyWorkAddressDocAiReview(documentId: string): Promise<W
     Boolean(process.env.GEMINI_API_KEY?.trim()) && process.env.DATA_TREATMENT_SKIP_AI_VERIFY !== "true";
   if (
     canExtractIdentity &&
-    (isPlatformWorkDocumentKind(meta.documentKind) || meta.documentKind === "bankDocument")
+    (isPlatformWorkDocumentKind(meta.documentKind) ||
+      meta.documentKind === "bankDocument" ||
+      meta.documentKind === "utilityAddressReceipt")
   ) {
     const row = await prisma.userIdentityExtraction.findUnique({ where: { userId: meta.userId } });
     if (!row?.firstName?.trim() && !row?.lastName?.trim()) {
@@ -100,12 +102,17 @@ export async function applyWorkAddressDocAiReview(documentId: string): Promise<W
       expectedFirstName: firstName,
       expectedLastName: lastName,
       forbiddenAppKeys: forbidden,
+      applicantDeclaredElectricVehicle: extractionRow?.mobilityDrivenElectricVehicle ?? null,
     });
     if (!v.ok) {
       rejectMessage = v.message;
     } else {
       finalOk = true;
-      const merged = mergePlatformMeta(extractionRow?.platformCapturesMeta ?? null, meta.documentKind, v.extraction);
+      const merged = mergePlatformPhotoMeta(
+        extractionRow?.platformCapturesMeta ?? null,
+        meta.documentKind,
+        v.extraction,
+      );
       await prisma.userWorkAddressExtraction.upsert({
         where: { userId: meta.userId },
         create: {
@@ -145,7 +152,10 @@ export async function applyWorkAddressDocAiReview(documentId: string): Promise<W
       finalOk = true;
     }
   } else if (meta.documentKind === "utilityAddressReceipt") {
-    const v = await verifyUtilityReceiptAddress(buf, meta.mimeType);
+    const v = await verifyUtilityReceiptAddress(buf, meta.mimeType, {
+      expectedFirstName: firstName,
+      expectedLastName: lastName,
+    });
     if (!v.ok) {
       rejectMessage = v.message;
     } else {
@@ -155,8 +165,16 @@ export async function applyWorkAddressDocAiReview(documentId: string): Promise<W
         create: {
           userId: meta.userId,
           utilityServiceAddress: v.extraction.serviceAddressLine,
+          utilityDwellingType: v.extraction.dwellingType,
+          utilityAddressComplement: v.extraction.addressComplement,
+          utilityBillHolderMatchesApplicant: true,
         },
-        update: { utilityServiceAddress: v.extraction.serviceAddressLine },
+        update: {
+          utilityServiceAddress: v.extraction.serviceAddressLine,
+          utilityDwellingType: v.extraction.dwellingType,
+          utilityAddressComplement: v.extraction.addressComplement,
+          utilityBillHolderMatchesApplicant: true,
+        },
       });
     }
   } else {
@@ -174,7 +192,12 @@ export async function applyWorkAddressDocAiReview(documentId: string): Promise<W
     } else if (meta.documentKind === "utilityAddressReceipt") {
       await prisma.userWorkAddressExtraction.updateMany({
         where: { userId: meta.userId },
-        data: { utilityServiceAddress: null },
+        data: {
+          utilityServiceAddress: null,
+          utilityDwellingType: null,
+          utilityAddressComplement: null,
+          utilityBillHolderMatchesApplicant: null,
+        },
       });
     }
   }

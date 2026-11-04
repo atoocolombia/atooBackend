@@ -380,6 +380,16 @@ model UserWorkAddressExtraction {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   utilityServiceAddress String?
+  /// CASA, APARTAMENTO u OTRO según el recibo.
+  utilityDwellingType String?
+  /// Torre, apto, interior, casa #, etc.
+  utilityAddressComplement String?
+  utilityBillHolderMatchesApplicant Boolean?
+
+  /// Declaración del solicitante: ¿ha conducido vehículo eléctrico en apps?
+  mobilityDrivenElectricVehicle Boolean?
+  /// Tiempo de experiencia con EV (p. ej. "8 meses", "2 años") cuando mobilityDrivenElectricVehicle es true.
+  mobilityElectricExperienceText String?
 
   bankHolderMatchesIdentity Boolean?
 

@@ -22,7 +22,10 @@ import { isIdentityAiDocumentKind } from "../lib/identityDocumentKinds.js";
 import { isJudicialAiDocumentKind } from "../lib/judicialDocumentKinds.js";
 import { pruneWorkAddressExtractionAfterDocumentDelete } from "../lib/userWorkAddressExtraction.js";
 import { documentMessage, platformMessage } from "../lib/userFacingMessage.js";
-import { isWorkAddressAiDocumentKind } from "../lib/workAddressDocumentKinds.js";
+import {
+  isPlatformWorkDocumentKind,
+  isWorkAddressAiDocumentKind,
+} from "../lib/workAddressDocumentKinds.js";
 
 export const documentsRouter = Router({ mergeParams: true });
 
@@ -258,6 +261,22 @@ async function saveDocument(req: Request, res: Response, next: NextFunction) {
     }
     const documentKind = documentKindRaw;
     const mimeType = normalizeUploadedMime(file.originalname, file.mimetype);
+
+    if (isPlatformWorkDocumentKind(documentKind)) {
+      const mobilityElectricRaw = (req.body as { mobilityElectricVehicle?: unknown }).mobilityElectricVehicle;
+      if (mobilityElectricRaw === "true" || mobilityElectricRaw === "false") {
+        await prisma.userWorkAddressExtraction.upsert({
+          where: { userId },
+          create: {
+            userId,
+            mobilityDrivenElectricVehicle: mobilityElectricRaw === "true",
+          },
+          update: {
+            mobilityDrivenElectricVehicle: mobilityElectricRaw === "true",
+          },
+        });
+      }
+    }
 
     if (documentKind === "dataTreatmentSigned") {
       if (mimeType !== "application/pdf") {
