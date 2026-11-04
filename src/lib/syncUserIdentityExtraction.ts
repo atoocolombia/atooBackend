@@ -154,7 +154,17 @@ export async function syncUserIdentityExtractionFromDocuments(
       where: {
         userId,
         validationStatus: DocumentValidationStatus.VALIDATED,
-        documentKind: { in: ["idFront", "idBack", "licenseFront", "licenseBack", "selfieWhiteBackground"] },
+        documentKind: {
+          in: [
+            "idFront",
+            "idBack",
+            "idBothSides",
+            "licenseFront",
+            "licenseBack",
+            "licenseBothSides",
+            "selfieWhiteBackground",
+          ],
+        },
       },
       select: { id: true, documentKind: true, storedPath: true, mimeType: true },
     });
@@ -176,10 +186,10 @@ export async function syncUserIdentityExtractionFromDocuments(
       }
     };
 
-    const idFront = await readBuf("idFront");
-    const idBack = await readBuf("idBack");
-    const licFront = await readBuf("licenseFront");
-    const licBack = await readBuf("licenseBack");
+    const idFront = (await readBuf("idFront")) ?? (await readBuf("idBothSides"));
+    const idBack = byKind.idBothSides ? null : await readBuf("idBack");
+    const licFront = (await readBuf("licenseFront")) ?? (await readBuf("licenseBothSides"));
+    const licBack = byKind.licenseBothSides ? null : await readBuf("licenseBack");
 
     const existing = await prisma.userIdentityExtraction.findUnique({ where: { userId } });
 
@@ -198,6 +208,8 @@ export async function syncUserIdentityExtractionFromDocuments(
 
     if (byKind.idFront) {
       identityPhotoDocumentId = byKind.idFront.id;
+    } else if (byKind.idBothSides) {
+      identityPhotoDocumentId = byKind.idBothSides.id;
     }
 
     if (idFront && !options?.skipIdentityDocExtraction) {
