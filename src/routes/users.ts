@@ -4,6 +4,10 @@ import { buildClientPaymentSummary } from "../lib/clientPaymentSummary.js";
 import { getClientAccessState } from "../lib/clientAccess.js";
 import { mapUserToProfile } from "../lib/userProfile.js";
 import { patchWorkAddressStepMeta } from "../lib/patchWorkAddressStepMeta.js";
+import {
+  getApplicationKnowledgeTestState,
+  submitApplicationKnowledgeTest,
+} from "../lib/applicationKnowledgeTestService.js";
 import { serializeWorkAddressStepMeta } from "../lib/workAddressStepMeta.js";
 import { prisma } from "../lib/prisma.js";
 import { submitApplication } from "../lib/vehicleDeliveryService.js";
@@ -184,6 +188,36 @@ usersRouter.patch("/:userId/work-address-step-meta", async (req: Request, res: R
       },
     });
     res.json(serializeWorkAddressStepMeta(row));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Evaluaciones teóricas (entre paso 3 y 4): preguntas y puntajes guardados. */
+usersRouter.get("/:userId/application-knowledge-test", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const state = await getApplicationKnowledgeTestState(paramUserId(req));
+    res.json(state);
+  } catch (err) {
+    next(err);
+  }
+});
+
+usersRouter.post("/:userId/application-knowledge-test", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = paramUserId(req);
+    const answers = (req.body as { answers?: unknown }).answers;
+    if (!answers || typeof answers !== "object" || Array.isArray(answers)) {
+      res.status(400).json({ error: "answers debe ser un objeto preguntaId → índice" });
+      return;
+    }
+    const result = await submitApplicationKnowledgeTest(userId, answers as Record<string, unknown>);
+    if (!result.ok) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    const state = await getApplicationKnowledgeTestState(userId);
+    res.json(state);
   } catch (err) {
     next(err);
   }

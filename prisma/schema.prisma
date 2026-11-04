@@ -110,6 +110,7 @@ model User {
   documents             Document[]
   identityExtraction    UserIdentityExtraction?
   workAddressExtraction UserWorkAddressExtraction?
+  applicationKnowledgeTest UserApplicationKnowledgeTest?
   vehiclePlan           ClientVehiclePlan?
   inspectionAppointments InspectionAppointment[] @relation("ClientInspectionAppointments")
   managedWorkshop       Workshop?
@@ -400,6 +401,21 @@ model UserWorkAddressExtraction {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Evaluaciones teóricas entre paso 3 y 4 de la solicitud (0–100 por categoría + ponderado).
+model UserApplicationKnowledgeTest {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  includeEvSection Boolean
+  evScore          Float?
+  vialScore        Float
+  customerServiceScore Float
+  weightedScore    Float
+
+  completedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 enum InspectionAppointmentKind {
