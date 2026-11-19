@@ -26,28 +26,16 @@ function resolveWompiKeys(): ResolvedWompiKeys {
 
   if (useTest) {
     return {
-      publicKey:
-        process.env.WOMPI_TEST_PUBLIC_KEY?.trim() || process.env.WOMPI_PUBLIC_KEY?.trim(),
-      integritySecret:
-        process.env.WOMPI_TEST_INTEGRITY_SECRET?.trim() ||
-        process.env.WOMPI_INTEGRITY_SECRET?.trim(),
-      eventsSecret:
-        process.env.WOMPI_TEST_EVENTS_SECRET?.trim() ||
-        process.env.WOMPI_EVENTS_SECRET?.trim() ||
-        "",
+      publicKey: process.env.WOMPI_TEST_PUBLIC_KEY?.trim(),
+      integritySecret: process.env.WOMPI_TEST_INTEGRITY_SECRET?.trim(),
+      eventsSecret: process.env.WOMPI_TEST_EVENTS_SECRET?.trim() ?? "",
     };
   }
 
   return {
-    publicKey:
-      process.env.WOMPI_PROD_PUBLIC_KEY?.trim() || process.env.WOMPI_PUBLIC_KEY?.trim(),
-    integritySecret:
-      process.env.WOMPI_PROD_INTEGRITY_SECRET?.trim() ||
-      process.env.WOMPI_INTEGRITY_SECRET?.trim(),
-    eventsSecret:
-      process.env.WOMPI_PROD_EVENTS_SECRET?.trim() ||
-      process.env.WOMPI_EVENTS_SECRET?.trim() ||
-        "",
+    publicKey: process.env.WOMPI_PUBLIC_KEY?.trim(),
+    integritySecret: process.env.WOMPI_INTEGRITY_SECRET?.trim(),
+    eventsSecret: process.env.WOMPI_EVENTS_SECRET?.trim() ?? "",
   };
 }
 
@@ -66,8 +54,8 @@ export function getWompiConfig(): WompiRuntimeConfig {
   const { publicKey, integritySecret, eventsSecret } = resolveWompiKeys();
 
   if (!publicKey || !integritySecret) {
-    const which = isWompiTestAppEnv() ? "WOMPI_TEST_*" : "WOMPI_PROD_*";
-    throw new Error(`Wompi no está configurado (${which} o legacy WOMPI_PUBLIC_KEY / WOMPI_INTEGRITY_SECRET)`);
+    const which = isWompiTestAppEnv() ? "WOMPI_TEST_*" : "WOMPI_PUBLIC_KEY / WOMPI_INTEGRITY_SECRET";
+    throw new Error(`Wompi no está configurado (${which})`);
   }
 
   const sandbox = publicKey.startsWith("pub_test_");
@@ -78,7 +66,7 @@ export function getWompiConfig(): WompiRuntimeConfig {
   }
   if (!isWompiTestAppEnv() && sandbox) {
     console.warn(
-      "[wompi] APP_ENV=production con pub_test_; cuando vayas a cobros reales usa WOMPI_PROD_* con pub_prod_.",
+      "[wompi] APP_ENV=production con pub_test_; en Railway prod usa pub_prod_ en WOMPI_PUBLIC_KEY.",
     );
   }
 
