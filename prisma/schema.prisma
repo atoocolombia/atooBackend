@@ -137,6 +137,7 @@ model User {
   geofenceExitRequests  GeofenceExitRequest[]
   geofenceExitReviews   GeofenceExitRequest[]     @relation("GeofenceExitReviewedBy")
   vehicleHistoryCreated VehicleHistoryEvent[]     @relation("VehicleHistoryCreatedBy")
+  wompiPaymentIntents   WompiPaymentIntent[]
 }
 
 enum VehicleHistoryEventType {
@@ -621,6 +622,8 @@ model ClientVehiclePlan {
   installmentAmountCop  Int?
   /// Número total de cuotas del plan.
   installmentCount      Int?
+  /// Depósito inicial requerido (COP), si aplica.
+  depositAmountCop      Int?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }
@@ -757,6 +760,37 @@ model PushSubscription {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+enum WompiPaymentKind {
+  DEPOSIT
+  INSTALLMENT
+}
+
+enum WompiPaymentIntentStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  ERROR
+  VOIDED
+}
+
+/// Intento de pago en línea (widget Wompi) antes de conciliar en ClientPayment.
+model WompiPaymentIntent {
+  id                   String                   @id
+  userId               String
+  user                 User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind                 WompiPaymentKind
+  amountCop            Int
+  reference            String                   @unique
+  status               WompiPaymentIntentStatus @default(PENDING)
+  wompiTransactionId   String?
+  clientPaymentId      String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@index([userId, status])
+  @@index([reference])
 }
 
 /// Pagos registrados manualmente por el analista.
