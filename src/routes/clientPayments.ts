@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { buildClientPaymentSummary } from "../lib/clientPaymentSummary.js";
 import { createWompiWidgetSession } from "../lib/wompiPaymentService.js";
-import { isWompiConfigured } from "../lib/wompiConfig.js";
+import { isWompiConfigured, isWompiSandbox } from "../lib/wompiConfig.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 export const clientPaymentsRouter = Router();
@@ -15,6 +15,7 @@ clientPaymentsRouter.get("/summary", async (req, res, next) => {
       summary: {
         ...summary,
         wompiEnabled: isWompiConfigured(),
+        wompiSandbox: isWompiConfigured() ? isWompiSandbox() : false,
       },
     });
   } catch (err) {
