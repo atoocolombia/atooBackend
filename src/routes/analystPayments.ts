@@ -18,6 +18,7 @@ const PAYMENT_METHODS = new Set([
   "nequi",
   "daviplata",
   "consignacion",
+  "wompi",
   "otro",
 ]);
 

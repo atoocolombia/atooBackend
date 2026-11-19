@@ -1,0 +1,1 @@
+ALTER TABLE "ClientVehiclePlan" ADD COLUMN "depositAmountCop" INTEGER;

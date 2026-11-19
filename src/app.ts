@@ -34,6 +34,7 @@ import { adminTrainingVideosRouter } from "./routes/adminTrainingVideos.js";
 import { trainingVideosRouter } from "./routes/trainingVideos.js";
 import { listSupportKnowledgeInventory } from "./lib/supportKnowledgePaths.js";
 import { whatsappWebhookRouter } from "./routes/whatsappWebhook.js";
+import { wompiWebhookRouter } from "./routes/wompiWebhook.js";
 import { DEPRECATED_GEMINI_MODELS, resolveGeminiModelChain } from "./lib/geminiModels.js";
 import { pingGemini } from "./lib/geminiChainedContent.js";
 import { requireAuth, requireAdmin, requireSelfUserParam, requireRole } from "./middleware/auth.js";
@@ -97,6 +98,7 @@ app.use(cookieParser());
 app.use(express.json());
 
 app.use("/webhooks/whatsapp", whatsappWebhookRouter);
+app.use("/webhooks/wompi", wompiWebhookRouter);
 
 app.get("/health", (_req, res) => {
   res.status(200).json({

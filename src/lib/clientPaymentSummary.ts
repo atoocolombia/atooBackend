@@ -12,6 +12,7 @@ function isMissingPaymentsSchema(err: unknown): boolean {
 
 const LEGACY_PLAN_WEEKS = 260;
 const LEGACY_WEEKLY_COP = 207_000;
+const LEGACY_DEPOSIT_COP = 2_000_000;
 const DEPOSIT_THRESHOLD_COP = 1_500_000;
 const INSTALLMENT_DUE_DAYS = 30;
 
@@ -25,6 +26,8 @@ export type ClientPortalPaymentItem = {
 };
 
 export type ClientPaymentSummary = {
+  /** Pagos en línea Wompi habilitados en el servidor */
+  wompiEnabled?: boolean;
   weeklyPaymentCop: number;
   planWeeks: number;
   totalPaidCop: number;
@@ -51,6 +54,7 @@ function paymentMethodLabel(method: string | null): string {
   const labels: Record<string, string> = {
     transferencia: "Transferencia bancaria",
     consignacion: "Consignación",
+    wompi: "Pago en línea (Wompi)",
     pse: "PSE",
     nequi: "Nequi",
     daviplata: "Daviplata",
@@ -240,7 +244,7 @@ export async function buildClientPaymentSummary(userId: string): Promise<ClientP
     (installmentAmountCop == null || installmentCount == null) &&
     email.toLowerCase() === "cliente@gmail.com"
   ) {
-    installmentAmountCop = 700_000;
+    installmentAmountCop = 50_000;
     installmentCount = 26;
   }
 
@@ -282,8 +286,18 @@ export async function buildClientPaymentSummary(userId: string): Promise<ClientP
     lastPayment && installmentsPaid < planInstallments ? addDays(lastPayment.paidAt, dueIntervalDays) : null;
 
   const depositPayment = installmentPlan
-    ? null
+    ? (payments.find((p) => p.notes === "wompi:deposit") ??
+      payments.find((p) => p.amountCop >= DEPOSIT_THRESHOLD_COP) ??
+      null)
     : (payments.find((p) => p.amountCop >= DEPOSIT_THRESHOLD_COP) ?? null);
+
+  const planDepositCop = plan?.depositAmountCop ?? null;
+  const pendingDepositCop =
+    planDepositCop != null && planDepositCop > 0
+      ? planDepositCop
+      : installmentPlan
+        ? null
+        : LEGACY_DEPOSIT_COP;
 
   return {
     weeklyPaymentCop,
@@ -298,7 +312,7 @@ export async function buildClientPaymentSummary(userId: string): Promise<ClientP
     paymentStatus: computePaymentStatus(nextPaymentDueAt),
     depositPaid: Boolean(depositPayment),
     depositPaidAt: depositPayment?.paidAt.toISOString() ?? null,
-    depositAmountCop: depositPayment?.amountCop ?? null,
+    depositAmountCop: depositPayment?.amountCop ?? pendingDepositCop,
     history,
     installmentPlan,
     installmentsPaid,
